@@ -3,9 +3,9 @@
 """
 quicopt.client — talk to the Quicopt service over HTTP.
 
-Encode a model to wire bytes (``quicopt.wire``), POST it, read the result back.
-Stdlib-only (``urllib``): the transport adds no dependency, like the rest of the
-core. The request body is the versioned wire bytes; the response is the service's
+Encode a model (``quicopt.wire``), POST it, read the result back. Standard library
+only (``urllib``): sending adds no dependency, like the rest of the package. The
+request body is the encoded model; the response is the service's
 result JSON (``status`` / ``objective`` / ``solution`` / a ready-to-print
 ``display`` / …). The first keyless call mints an API key, returned in the
 ``X-Quicopt-Api-Key`` response header; it is cached at
@@ -121,9 +121,10 @@ def _write_key(path: Path, key: str) -> None:
 @dataclass(frozen=True)
 class Result:
     """A finished solve, parsed from the service's result JSON. ``objective`` and
-    ``feasible`` are ``None`` when the class or outcome leaves them undefined
-    (e.g. an unconstrained heuristic, or no incumbent). ``display`` is the framed,
-    ready-to-print summary the service renders for every backend alike."""
+    ``feasible`` are ``None`` where the outcome leaves them undefined — a model
+    with nothing to feasibility-check, or a run that found no solution.
+    ``display`` is the framed, ready-to-print summary the service renders the same
+    way for every kind of model."""
     job_id: str
     status: str
     objective: Optional[float]
@@ -135,7 +136,7 @@ class Result:
 
     @property
     def model_class(self) -> Optional[str]:
-        """The class the service routed the model to (``LP``/``MILP``/``QUBO``/…).
+        """The kind of model the service recognised (``LP``/``MILP``/``QUBO``/…).
 
         Returns:
             The ``model_class`` recorded in ``solver_data``, or ``None`` if the
@@ -181,13 +182,13 @@ class QuicoptError(Exception):
         super().__init__(self.body.get("error") or f"HTTP {status_code}")
 
 
-_Model = Any    # a front-end model (Pyomo, MathOpt, PuLP), a Program, or pre-encoded wire bytes
+_Model = Any    # a modeling-library model (Pyomo, MathOpt, PuLP), a Program, or encoded bytes
 
 
 def _import_frontend(model: Any) -> Program:
-    """A modeling-front-end object → ``Program``, via that front-end's importer,
-    dispatched by type. The importers are imported lazily so the stdlib-only core
-    never pulls in an optional front-end dependency until a model of that kind is
+    """A modeling-library object → ``Program``, via that library's importer,
+    dispatched by type. The importers are loaded lazily so the standard-library-only
+    core never pulls in an optional dependency until a model of that kind is
     actually solved."""
     mod = type(model).__module__ or ""
     if mod.startswith("ortools") or hasattr(model, "export_model"):
@@ -200,12 +201,12 @@ def _import_frontend(model: Any) -> Program:
         from .pulp import import_model
         return import_model(model)
     raise TypeError(f"cannot solve a {type(model).__name__}: pass a Pyomo, OR-Tools "
-                    "MathOpt, or PuLP model, a Program, or wire bytes")
+                    "MathOpt, or PuLP model, a Program, or encoded bytes")
 
 
 def _to_wire(model: _Model) -> bytes:
-    """Coerce to wire bytes: pre-encoded bytes pass through, a ``Program`` is
-    encoded, and a front-end model (Pyomo, MathOpt) is imported then encoded — so
+    """Coerce to encoded bytes: bytes pass through, a ``Program`` is encoded, and a
+    model from a modeling library (Pyomo, MathOpt, PuLP) is read then encoded — so
     a caller solves the *model*, never a hand-built ``Program``."""
     if isinstance(model, (bytes, bytearray)):
         return bytes(model)
@@ -231,9 +232,9 @@ def _query(config: Optional[Dict[str, Any]]) -> str:
 
 
 def _source_language(model: Any) -> Optional[str]:
-    """The modelling front-end that authored ``model`` (for the ``source_language``
-    tag), or ``None`` for a hand-built ``Program`` / pre-encoded wire bytes, which
-    have no front-end to attribute. Mirrors the dispatch in ``_import_frontend``."""
+    """The modeling library that wrote ``model`` (for the ``source_language`` tag),
+    or ``None`` for a hand-built ``Program`` / raw bytes, which have none to
+    attribute. Mirrors the dispatch in ``_import_frontend``."""
     if isinstance(model, (bytes, bytearray, Program)):
         return None
     mod = type(model).__module__ or ""
@@ -301,9 +302,9 @@ class Client:
         """Solve ``model`` synchronously, blocking until the result returns.
 
         Args:
-            model: A front-end model (Pyomo, OR-Tools MathOpt) — imported to the
-                wire IR here — or a ``Program`` / pre-encoded wire bytes if you built
-                them yourself.
+            model: A model from a modeling library (Pyomo, OR-Tools MathOpt, PuLP)
+                — read and encoded here — or a ``Program`` / already-encoded bytes
+                if you built them yourself.
             project: Optional project tag for the call, so calls on one key can be
                 invoiced per project. Sent as a query param, not baked into the model.
             config: Optional service parameters, sent as the query string.
@@ -324,7 +325,7 @@ class Client:
         """Submit ``model`` for asynchronous solving and return a handle to poll.
 
         Args:
-            model: A Pyomo/MathOpt model, a ``Program``, or pre-encoded wire bytes.
+            model: A Pyomo/MathOpt/PuLP model, a ``Program``, or encoded bytes.
             project: Optional project tag for the call (per-project invoicing), sent
                 as a query param, not baked into the model.
             config: Optional service parameters, sent as the query string.

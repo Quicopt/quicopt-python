@@ -3,20 +3,29 @@
 [![PyPI](https://img.shields.io/pypi/v/quicopt.svg)](https://pypi.org/project/quicopt/)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://pypi.org/project/quicopt/)
 [![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://timbode.github.io/quicopt-python/)
-[![Downloads](https://img.shields.io/pypi/dm/quicopt.svg)](https://pypistats.org/packages/quicopt)
 [![License: Apache 2.0](https://img.shields.io/pypi/l/quicopt.svg)](https://github.com/timbode/quicopt-python/blob/main/LICENSE)
 
-The Python client for the Quicopt optimization service. Author a model in a Python
-modeling front-end (Pyomo, OR-Tools MathOpt, or PuLP), convert it to Quicopt's wire
-IR, and emit the versioned, language-neutral bytes the service consumes.
+The Python client for the [Quicopt](https://quicopt.com) optimization service.
+
+You describe a decision: what you get to choose, what has to hold, and what you
+want as much (or as little) of as possible. Quicopt finds the best choice there is.
+
+Write the model with the Python modeling library you already use —
+[Pyomo](https://www.pyomo.org/),
+[OR-Tools MathOpt](https://developers.google.com/optimization/math_opt) or
+[PuLP](https://coin-or.github.io/pulp/) — and `solve` encodes it, sends it to the
+service and hands back the answer. There is no solver on your machine; the service
+does the solving.
+
+Full documentation: **<https://timbode.github.io/quicopt-python/>**
 
 ## Install
 
 ```sh
-pip install quicopt              # core (ir + wire) — standard library only
-pip install "quicopt[pyomo]"     # + the Pyomo front-end
-pip install "quicopt[mathopt]"   # + the OR-Tools MathOpt front-end
-pip install "quicopt[pulp]"      # + the PuLP front-end
+pip install quicopt              # the model and the encoder — standard library only
+pip install "quicopt[pyomo]"     # + read models written in Pyomo
+pip install "quicopt[mathopt]"   # + read models written in OR-Tools MathOpt
+pip install "quicopt[pulp]"      # + read models written in PuLP
 ```
 
 From source (contributors), an editable install into a virtual environment:
@@ -37,16 +46,16 @@ m.x = pyo.Var(bounds=(0.1, 10))
 m.obj = pyo.Objective(expr=m.x**2 + 1.0 / m.x, sense=pyo.minimize)
 
 client = Client()                             # defaults to the free-tier Quicopt server
-result = client.solve(m)                      # solve the model — the import to the
-                                              # wire IR happens inside
+result = client.solve(m)                      # read the model, encode it, solve it
 print(result.status, result.objective, result.solution)
 print(result.display)                         # the service's ready-to-print summary
 ```
 
-`solve` takes the model directly (Pyomo, OR-Tools MathOpt, or PuLP) and imports it
-to the wire IR internally. The first keyless call mints an API key, cached at
-`$XDG_CACHE_HOME/quicopt/free_key` (`~/.cache/…` by default) and replayed on every
-later call — including from later runs, so you keep one key without doing anything.
+`solve` takes the model as it stands (Pyomo, OR-Tools MathOpt, or PuLP) and reads
+it into Quicopt's own form on the way out. The first keyless call mints an API key,
+cached at `$XDG_CACHE_HOME/quicopt/free_key` (`~/.cache/…` by default) and replayed
+on every later call — including from later runs, so you keep one key without doing
+anything.
 Pass `Client(api_key=…)` to authenticate with a key you already hold (used as-is,
 never cached), or `Client(cache=False)` to keep the key in memory only. Point
 `Client(base_url=…)` at another server to override the default. For a long solve,
@@ -58,54 +67,55 @@ cache is wiped between sessions and each run mints a new key. Set
 key across sessions.
 
 Tag a call with `client.solve(m, project="my-project")` to attribute it to a
-project — handy when one key serves several projects. The modelling front-end
-(Pyomo/MathOpt/PuLP) is recorded automatically.
+project — handy when one key serves several projects. Which modeling library you
+wrote in (Pyomo/MathOpt/PuLP) is recorded automatically.
 
-If you need the wire bytes yourself (to inspect or send by another route), the
-front-end importers and encoder are still public:
+If you want the encoded model yourself — to inspect it, store it, or send it by
+another route — the importers and the encoder are public too:
 
 ```python
 from quicopt import encode
 from quicopt.pyomo import import_model
 
-payload = encode(import_model(m))   # Pyomo model → Program → versioned wire bytes
+payload = encode(import_model(m))   # Pyomo model → a Quicopt model → bytes
 ```
 
 ## Layout
 
 ```
-quicopt/ir.py      the Program IR data model
-quicopt/wire.py    Program → versioned wire bytes (a stdlib-only encoder)
-quicopt/pyomo.py   Pyomo model → Program (a front-end)
-quicopt/mathopt.py OR-Tools MathOpt model → Program (a front-end)
-quicopt/pulp.py    PuLP model → Program (a front-end)
-quicopt/client.py  POST the wire bytes to the service, read the result (HTTP, stdlib)
+quicopt/ir.py      a model as plain data: variables, expressions, constraints
+quicopt/wire.py    a model → the bytes the service reads (standard library only)
+quicopt/pyomo.py   a Pyomo model → a Quicopt model
+quicopt/mathopt.py an OR-Tools MathOpt model → a Quicopt model
+quicopt/pulp.py    a PuLP model → a Quicopt model
+quicopt/client.py  POST those bytes to the service, read the result (HTTP, stdlib)
 ```
 
-The IR and wire format are the client's contract with the service; `wire.py`
-encodes that schema exactly. Each front-end is an independent module beside
-`pyomo.py` (`mathopt.py` for OR-Tools authors, `pulp.py` for PuLP authors; further
-modeling libraries slot in the same way), pulls in only its own optional extra, and
-builds the IR through the canonical forms in `_terms.py` — so the same model reaches
-the same wire whichever front-end authored it.
+Between client and service, a model is a `Program`: variables, expressions and
+constraints as data, with a published [protobuf](https://protobuf.dev) schema for
+it, which `wire.py` encodes exactly. Each importer is an independent module —
+`pyomo.py`, `mathopt.py`, `pulp.py`, and further modeling libraries slot in the
+same way — pulls in only its own optional extra, and builds the model through the
+shared forms in `_terms.py`, so the same model comes out the same bytes whichever
+library wrote it.
 
 ## Test
 
-The encoder is checked against committed golden byte vectors, with **no
-dependencies**:
+The encoder is checked against committed golden bytes, with **no dependencies**:
 
 ```sh
 python3 tests/test_wire_golden.py        # or: pytest tests/
 ```
 
-The front-ends are pinned to each other by byte equality: the same model authored in
-Pyomo and in PuLP must encode to identical bytes, which carries the golden's
+The importers are pinned to each other by byte equality: the same model written in
+Pyomo and in PuLP must encode to identical bytes, which carries the goldens'
 authority across (`tests/test_frontend_equivalence.py`; needs the `[pyomo,pulp]`
 extras, skips without them).
 
 ## Status
 
-- **ir + wire** — stable; the encoder is byte-exact against what the service decodes.
+- **the model + the encoder** (`ir`, `wire`) — stable; the bytes are exactly what
+  the service decodes.
 - **pyomo importer** — affine / quadratic / nonlinear (`+ - * / ^ sin cos exp log
   sqrt abs`), variable bounds (incl. unbounded) + integrality, `==` / `<=` / `>=` /
   ranged constraints, `min` / `max`. A fixed variable pins to `[val, val]`; one fixed
@@ -117,10 +127,10 @@ extras, skips without them).
   `<=` / `==` / `>=` constraints, variable bounds (incl. unbounded) + integrality,
   `min` / `max`. PuLP is linear by construction, so this is exactly LP / MILP; a
   problem with no objective is a feasibility problem (a constant `0`).
-- **transport (HTTP)** — `Client.solve` / `Client.submit` over `/v1/solve` and
-  `/v1/jobs`: wire bytes up, result JSON (status / objective / solution / framed
-  `display`) back; API-key minting on the first call, optional gzip. Standard
-  library only.
+- **sending (HTTP)** — `Client.solve` / `Client.submit` over `/v1/solve` and
+  `/v1/jobs`: the encoded model up, result JSON (status / objective / solution /
+  framed `display`) back; API-key minting on the first call, optional gzip.
+  Standard library only.
 
 ## License
 

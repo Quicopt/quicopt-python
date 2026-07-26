@@ -60,8 +60,12 @@ def _indexed():                                             # families, indexing
         VarDecl("z", ["S"], BINARY, 0.0, 1.0, 0.0)]
     obj = Reduce("+", "i", SetRef("S", ()),
                  Apply("*", [Param("p", ("i",)), Var("y", ("i",))]), None)
+    # The filter is data-determined — it decides which terms exist, so it cannot
+    # depend on a decision variable (the server rejects that at the boundary;
+    # a variable-gated sum is written Σ z[j]·y[j] instead). p[1] = 0.0, so this
+    # one genuinely drops a fibre.
     cons = [Constraint(
-        Reduce("+", "j", SetRef("a", ("i",)), Var("y", ("j",)), Var("z", ("j",))),
+        Reduce("+", "j", SetRef("a", ("i",)), Var("y", ("j",)), Param("p", ("i",))),
         Nonneg(),
         [("i", SetRef("S", ()))])]
     fix = {("α", (1,)): 0.0}

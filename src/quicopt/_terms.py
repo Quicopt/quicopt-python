@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: (c) 2026 Tim Bode, PGI-12, Forschungszentrum Jülich
 """
-quicopt._terms — the canonical IR forms every front-end builds.
+quicopt._terms — the shared ``Program`` forms every importer builds.
 
-Private. A front-end (``quicopt.pyomo``, ``quicopt.mathopt``, ``quicopt.pulp``)
-differs only in the model it reads; the IR it writes is the same, and these are the
-shapes it writes. They live here because that agreement is load-bearing: the wire
-bytes are checked byte-for-byte against the service's codec, so the same model must
-reach the same IR whichever front-end authored it, and a per-front-end copy of these
-forms is free to drift out of that agreement.
+Private. An importer (``quicopt.pyomo``, ``quicopt.mathopt``, ``quicopt.pulp``)
+differs only in the model it reads; the ``Program`` it writes is the same, and these
+are the shapes it writes. They live here because that agreement is load-bearing: the
+encoded bytes are checked byte-for-byte against what the service produces, so the
+same model must come out the same ``Program`` whichever library wrote it, and a
+per-importer copy of these forms is free to drift out of that agreement.
 
 The constraint forms::
 
@@ -27,11 +27,11 @@ from .ir import Apply, Const, Constraint, Nonneg, Zero
 
 
 def _scaled(coef, e):
-    """Return ``coef · e`` as an IR expression, dropping a unit coefficient.
+    """Return ``coef · e`` as a Quicopt expression, dropping a unit coefficient.
 
     Args:
         coef: The scalar multiplier; ``1.0`` leaves ``e`` unchanged.
-        e: The IR expression being scaled.
+        e: The expression being scaled.
 
     Returns:
         Expression: ``e`` if ``coef == 1.0`` else ``Apply("*", [Const(coef), e])``.
@@ -40,10 +40,10 @@ def _scaled(coef, e):
 
 
 def _sum(terms):
-    """Fold terms into an n-ary IR sum, dropping additive-zero constants.
+    """Fold terms into an n-ary sum, dropping additive-zero constants.
 
     Args:
-        terms: The IR expression terms being added.
+        terms: The expression terms being added.
 
     Returns:
         Expression: ``Const(0.0)`` if every term is a zero constant, the sole term
@@ -56,10 +56,10 @@ def _sum(terms):
 
 
 def _minus(f, c):
-    """Return ``f − c`` as an IR expression, dropping the additive zero.
+    """Return ``f − c`` as a Quicopt expression, dropping the additive zero.
 
     Args:
-        f: The IR expression on the left.
+        f: The expression on the left.
         c: The numeric constant subtracted (a bound); ``0.0`` leaves ``f`` unchanged.
 
     Returns:
@@ -73,7 +73,7 @@ def _geq(u, f):
 
     Args:
         u: The numeric upper bound.
-        f: The IR constraint-body expression.
+        f: The constraint-body expression.
 
     Returns:
         Expression: ``Apply("-", [Const(u), f])``.
@@ -89,9 +89,9 @@ def _emit(cons, f, lb, ub):
     direction.
 
     Args:
-        cons: The list of IR :class:`~quicopt.ir.Constraint` rows appended to
+        cons: The list of :class:`~quicopt.ir.Constraint` rows appended to
             (mutated in place).
-        f: The IR expression of the row body.
+        f: The expression of the row body.
         lb: The row's lower bound (``-inf`` for none).
         ub: The row's upper bound (``+inf`` for none).
 

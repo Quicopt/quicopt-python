@@ -1,20 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: (c) 2026 Tim Bode, PGI-12, Forschungszentrum Jülich
 """
-quicopt.wire — a structured ``Program`` → versioned wire bytes.
+quicopt.wire — a ``Program`` → the bytes the service reads.
 
-A hand-rolled, stdlib-only encoder of Quicopt's wire schema (the deliberate "no
-protoc" choice: the schema is small and frozen). Crucially it is **byte-identical**
-to what the Quicopt service expects: the same canonical ordering of the order-free
-``dict`` tables (so equal Programs encode to equal bytes), the same always-emit-the-
-oneof-case rule (so ``Const(0.0)`` survives), and the same always-emit scalars
-(``VarDecl.start``, ``ParamEntry.value`` even when ``0.0`` — which proto3's
-default-omission would drop). That exactness is the encoder's correctness property
-(see ``tests/test_wire_golden.py``).
+A hand-written encoder of Quicopt's protobuf schema, using nothing but the standard
+library (the deliberate "no protoc" choice: the schema is small and frozen).
+Crucially the bytes are **identical** to what the service produces for the same
+model: the same fixed ordering of the order-free ``dict`` tables (so equal Programs
+encode to equal bytes), the same rule that a ``oneof`` case is always written (so
+``Const(0.0)`` survives), and the same rule that ``VarDecl.start`` and
+``ParamEntry.value`` are written even when ``0.0``, which protobuf would otherwise
+drop as a default. That exactness is what the encoder is judged on (see
+``tests/test_wire_golden.py``).
 
-Wire format crib (proto3): a field is ``tag = (number<<3 | wiretype)`` then the
-payload; wiretype 0=varint, 1=fixed64 (doubles, little-endian), 2=length-delimited
-(strings, embedded messages, repeated). Embedded messages are length-delimited.
+Protobuf crib: a field is ``tag = (number<<3 | wiretype)`` then the payload;
+wiretype 0=varint, 1=fixed64 (doubles, little-endian), 2=length-delimited (strings,
+embedded messages, repeated). Embedded messages are length-delimited.
 """
 from __future__ import annotations
 
@@ -313,7 +314,7 @@ def _enc_expr(io, e):
 
     Args:
         io: The byte sink.
-        e: An IR expression node (:class:`~quicopt.ir.Const` /
+        e: An expression node (:class:`~quicopt.ir.Const` /
             :class:`~quicopt.ir.Param` / :class:`~quicopt.ir.Var` /
             :class:`~quicopt.ir.Apply` / :class:`~quicopt.ir.Reduce`).
 
@@ -352,7 +353,7 @@ def _expr_msg(e):
     """Serialize an expression node to its standalone ``Expression`` message bytes.
 
     Args:
-        e: An IR expression node.
+        e: An expression node.
 
     Returns:
         bytes: The encoded ``Expression`` message, for embedding via :func:`_wmsg`.
@@ -546,21 +547,20 @@ def _enc_param_table(io, name, tbl):
 
 
 def encode(prog: Program) -> bytes:
-    """Serialize a ``Program`` to versioned (v1) wire bytes.
+    """Encode a ``Program`` to the (v1) bytes the service reads.
 
     The top-level message in schema order: index sets (1), indexed sets (2),
     param tables (3), variable declarations (4), the objective expression (5), the
     sense string (6), constraints (7), and the ``fix`` pins (8). The order-free
-    tables (``indexed_sets``, ``params``, ``fix``) are emitted in sorted-key order
-    so equal Programs encode to equal bytes — the byte-identity property the golden
-    test pins.
+    tables (``indexed_sets``, ``params``, ``fix``) are written in sorted-key order
+    so equal Programs encode to equal bytes — the property the golden test pins.
 
     Args:
-        prog: The :class:`~quicopt.ir.Program` to serialize.
+        prog: The :class:`~quicopt.ir.Program` to encode.
 
     Returns:
-        bytes: The wire message, deterministic and byte-identical to what the
-        Quicopt service decodes for the same model.
+        bytes: The message, deterministic and identical byte for byte to what the
+        Quicopt service produces for the same model.
     """
     io = BytesIO()
     for s in prog.sets:
@@ -586,11 +586,11 @@ def encode(prog: Program) -> bytes:
 
 
 def encode_params(params: dict) -> bytes:
-    """Serialize just the ``Param`` tables as a standalone ``ParamData`` message.
+    """Encode just the ``Param`` tables as a standalone ``ParamData`` message.
 
-    This supports rebinding parameters over the wire without resending the model:
-    graph the ``Program`` once, then emit one ``ParamData`` per instance. Tables are
-    emitted in sorted-key order to stay byte-canonical.
+    This is how data is rebound without resending the model: send the ``Program``
+    once, then one ``ParamData`` per instance. Tables are written in sorted-key
+    order, so the same data always encodes to the same bytes.
 
     Args:
         params: A mapping ``table name → (index tuple → double)`` of the parameter

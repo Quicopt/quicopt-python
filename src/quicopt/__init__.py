@@ -3,16 +3,17 @@
 """
 quicopt — the Python client for the Quicopt optimization service.
 
-Authors an optimization model in a Python front-end (Pyomo, …) and converts it to
-Quicopt's wire IR — the versioned, language-neutral contract the service consumes.
-This package is a thin front-end; see ``README.md`` for usage.
+Takes an optimization model written in a Python modeling library (Pyomo, OR-Tools
+MathOpt, PuLP) and reads it into a ``Program`` — a model as plain data, in the
+published, language-neutral form the service reads. Nothing is solved here; see
+``README.md`` for usage.
 
-Layers:
-  ir      — the ``Program`` IR data model (front-end-agnostic)
-  wire    — ``Program`` → versioned wire bytes (front-end-agnostic)
-  pyomo   — a Pyomo model → ``Program`` importer (a front-end)
-  mathopt — an OR-Tools MathOpt model → ``Program`` importer (a front-end)
-  client  — POST the wire bytes to the service and read the result (HTTP, stdlib)
+Steps:
+  ir      — the ``Program``: a model as plain data, whichever library wrote it
+  wire    — ``Program`` → the bytes the service reads
+  pyomo   — a Pyomo model → ``Program``
+  mathopt — an OR-Tools MathOpt model → ``Program``
+  client  — POST those bytes to the service and read the result (HTTP, stdlib)
 """
 from .ir import (Const, Param, Var, Apply, Reduce, SetRef,
                  Zero, Nonneg, Indicator,
