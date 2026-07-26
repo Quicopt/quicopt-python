@@ -3,7 +3,6 @@
 [![PyPI](https://img.shields.io/pypi/v/quicopt.svg)](https://pypi.org/project/quicopt/)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://pypi.org/project/quicopt/)
 [![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://timbode.github.io/quicopt-python/)
-[![Downloads](https://img.shields.io/pypi/dm/quicopt.svg)](https://pypistats.org/packages/quicopt)
 [![License: Apache 2.0](https://img.shields.io/pypi/l/quicopt.svg)](https://github.com/timbode/quicopt-python/blob/main/LICENSE)
 
 The Python client for the [Quicopt](https://quicopt.com) optimization service.
