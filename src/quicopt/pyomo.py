@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: (c) 2026 Tim Bode, PGI-12, Forschungszentrum Jülich
 """
-quicopt.pyomo — a Pyomo model → Quicopt ``Program`` IR.
+quicopt.pyomo — a Pyomo model → a Quicopt ``Program``.
 
-A front-end of the client. Imports at Pyomo's expression-tree level: the
-single active objective and each constraint are walked into the IR expression graph,
-variable bounds + domain into ``VarDecl``, and function-in-set constraints into
-``Zero``/``Nonneg`` rows. The result is a *flat* ``Program`` (one scalar ``VarDecl``
-per Pyomo ``VarData``; Pyomo has already expanded indexed components).
+Reads the model at Pyomo's expression-tree level: the single active objective and
+each constraint are walked into Quicopt's expression graph, variable bounds and
+domain into ``VarDecl``, and each constraint into a ``Zero``/``Nonneg`` row. The
+result is a *flat* ``Program`` (one scalar ``VarDecl`` per Pyomo ``VarData``; Pyomo
+has already expanded indexed components).
 
-An operator absent from the service's catalog is a coverage gap to resolve in the
-service, never papered over here.
+An operator the service does not know is a gap to close in the service, never
+papered over here.
 """
 from __future__ import annotations
 
@@ -27,10 +27,10 @@ from .ir import (Const, Var, Apply, VarDecl, Program,
 _CATALOG = {"+", "-", "*", "/", "^", "sin", "cos", "exp", "log", "sqrt", "abs"}
 
 
-# ── Pyomo expression node → IR Expression ───────────────────────────────────
+# ── Pyomo expression node → Quicopt Expression ──────────────────────────────
 
 def _expr(node, var):
-    """Walk a Pyomo expression node into an IR ``Expression``.
+    """Walk a Pyomo expression node into a Quicopt ``Expression``.
 
     Recurses the Pyomo tree, dispatching on each node's ``getname()`` head: ``sum``
     → n-ary ``+``, ``prod``/``mon`` → ``*``, ``div``/``pow`` → ``/``/``^``, ``neg``
@@ -40,11 +40,11 @@ def _expr(node, var):
 
     Args:
         node: A Pyomo expression node, variable, parameter, or Python number.
-        var: A callable mapping a Pyomo ``VarData`` to its IR
+        var: A callable mapping a Pyomo ``VarData`` to its
             :class:`~quicopt.ir.Var`.
 
     Returns:
-        Expression: The corresponding IR expression node.
+        Expression: The corresponding Quicopt expression node.
     """
     if isinstance(node, (int, float)):
         return Const(float(node))
@@ -72,7 +72,7 @@ def _apply(op, args):
 
     Args:
         op: The operator head; must be one of :data:`_CATALOG`.
-        args: The IR argument expressions.
+        args: The argument expressions.
 
     Returns:
         Apply: The ``Apply(op, args)`` node.
@@ -88,14 +88,14 @@ def _apply(op, args):
 
 
 def import_model(m):
-    """Convert a Pyomo ``ConcreteModel`` into Quicopt's ``Program`` IR.
+    """Convert a Pyomo ``ConcreteModel`` into a Quicopt ``Program``.
 
     Each ``VarData`` becomes a scalar ``VarDecl`` (``x{i}`` in declaration order)
     carrying its bounds and domain (``Binary``→``BINARY``, integer domains→
     ``INTEGER``, else ``CONTINUOUS``); the active objective and every constraint
-    become IR expressions. Requires exactly one active objective; an absent Pyomo
-    variable bound is taken as ±Inf (a free direction). A variable that is fixed but
-    carries no value **raises**: its pin has no value to pin *to*, and the ±Inf
+    become Quicopt expressions. Requires exactly one active objective; an absent
+    Pyomo variable bound means unbounded in that direction (±Inf). A variable that
+    is fixed but carries no value **raises**: its pin has no value to pin *to*, and the ±Inf
     reading of an absent bound would turn it into a free variable instead.
     """
     vis = list(m.component_data_objects(pyo.Var))

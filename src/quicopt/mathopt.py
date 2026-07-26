@@ -1,20 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: (c) 2026 Tim Bode, PGI-12, Forschungszentrum Jülich
 """
-quicopt.mathopt — an OR-Tools MathOpt model → Quicopt ``Program`` IR.
+quicopt.mathopt — an OR-Tools MathOpt model → a Quicopt ``Program``.
 
-A second front-end (beside ``quicopt.pyomo``), for authors already holding an
+A second importer (beside ``quicopt.pyomo``), for authors already holding an
 OR-Tools `MathOpt <https://developers.google.com/optimization/math_opt>`_ model.
-It walks a ``ModelProto`` — the objective ``offset + Σ cᵢxᵢ + Σ_{i≤j} qᵢⱼxᵢxⱼ`` and
-each ``lbᵣ ≤ Σ A[r,j]xⱼ ≤ ubᵣ`` row — into the IR expression graph, with variable
-bounds + integrality into ``VarDecl`` and function-in-set rows into
-``Zero``/``Nonneg``. ±Inf bounds pass straight through (a free direction); a
-one-sided range drops its infinite side.
+It walks a ``ModelProto`` — the objective ``offset + Σ cᵢxᵢ + Σ_{i≤j} qᵢⱼxᵢxⱼ``
+and each ``lbᵣ ≤ Σ A[r,j]xⱼ ≤ ubᵣ`` row — into Quicopt's expression graph, with
+variable bounds and integrality into ``VarDecl`` and each row into
+``Zero``/``Nonneg``. ±Inf bounds pass straight through and mean "unbounded in that
+direction"; a one-sided range drops its infinite side.
 
-The supported surface is LP / MILP / (unconstrained binary-quadratic) QUBO — the
-classes the service routes. A MathOpt construct outside it (quadratic / second-order
--cone / SOS / indicator constraints, multiple objectives) **raises**: it is a
-coverage gap to resolve in the service, never silently dropped here.
+What is supported is LP / MILP / (unconstrained binary-quadratic) QUBO — the kinds
+of model the service handles. A MathOpt construct outside that (quadratic /
+second-order-cone / SOS / indicator constraints, multiple objectives) **raises**:
+it is a gap to close in the service, never silently dropped here.
 
 Requires the optional ``[mathopt]`` extra (``pip install -e '.[mathopt]'``).
 """
@@ -32,7 +32,7 @@ _UNSUPPORTED = ("quadratic_constraints", "second_order_cone_constraints",
 
 
 def import_model(model):
-    """Convert an OR-Tools MathOpt model into Quicopt's ``Program`` IR.
+    """Convert an OR-Tools MathOpt model into a Quicopt ``Program``.
 
     ``model`` is a ``ModelProto`` or a high-level ``mathopt.Model`` (exported to
     its proto). Variables are named by their MathOpt name, falling back to ``x{id}``
@@ -49,7 +49,7 @@ def import_model(model):
                              "service serves — resolve it there, not in the client")
 
     vp = model.variables
-    name = {}                                  # proto var id → IR name
+    name = {}                                  # proto var id → Quicopt name
     vars = []
     for k, vid in enumerate(vp.ids):
         nm = vp.names[k] if k < len(vp.names) and vp.names[k] else f"x{vid}"

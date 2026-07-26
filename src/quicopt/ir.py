@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: (c) 2026 Tim Bode, PGI-12, Forschungszentrum Jülich
 """
-quicopt.ir — the structured ``Program`` IR.
+quicopt.ir — a model as plain data.
 
-Front-end-agnostic data: a front-end (``quicopt.pyomo``, ``quicopt.mathopt``) builds a ``Program``;
-``quicopt.wire`` serializes it to the versioned wire bytes. The IR/wire is the
-service's contract — these types track it, they never fork it. Index tuple entries
-are ``int`` (a concrete coordinate) or ``str`` (a bound index symbol); the IR never
-uses a bare string for data, so the mapping is total.
+A ``Program`` is what a model *is* to Quicopt: variables, expressions and
+constraints, with no trace of the library that wrote it. An importer
+(``quicopt.pyomo``, ``quicopt.mathopt``, ``quicopt.pulp``) builds one;
+``quicopt.wire`` encodes it to the bytes the service reads. The shape of a
+``Program`` is the service's published contract — these types track it, they never
+fork it. Index tuple entries are ``int`` (a concrete coordinate) or ``str`` (a
+bound index symbol); a bare string is never data, so the mapping is total.
 """
 from __future__ import annotations
 
@@ -23,7 +25,7 @@ __all__ = [
 
 
 class Domain(IntEnum):
-    """The domain a variable ranges over. Values are the wire enum codes."""
+    """The domain a variable ranges over. Values are the codes the service reads."""
     CONTINUOUS = 1
     INTEGER = 2
     BINARY = 3

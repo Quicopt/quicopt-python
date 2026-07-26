@@ -1,5 +1,5 @@
 site_name: quicopt
-site_description: Python client for the Quicopt optimization service — author models, emit the wire IR.
+site_description: Python client for the Quicopt optimization service — write a model in Pyomo, MathOpt or PuLP and solve it.
 site_url: https://timbode.github.io/quicopt-python/
 repo_url: https://github.com/timbode/quicopt-python
 repo_name: timbode/quicopt-python
@@ -70,9 +70,9 @@ markdown_extensions:
 nav:
   - Home: index.md
   - API reference:
-      - ir — the Program IR: api/ir.md
+      - ir — a model as data: api/ir.md
       - wire — the encoder: api/wire.md
-      - pyomo — Pyomo front-end: api/pyomo.md
-      - mathopt — MathOpt front-end: api/mathopt.md
-      - pulp — PuLP front-end: api/pulp.md
-      - client — HTTP transport: api/client.md
+      - pyomo — read a Pyomo model: api/pyomo.md
+      - mathopt — read a MathOpt model: api/mathopt.md
+      - pulp — read a PuLP model: api/pulp.md
+      - client — send it, read the result: api/client.md

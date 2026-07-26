@@ -1,19 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: (c) 2026 Tim Bode, PGI-12, Forschungszentrum Jülich
 """
-quicopt.pulp — a PuLP problem → Quicopt ``Program`` IR.
+quicopt.pulp — a PuLP problem → a Quicopt ``Program``.
 
-A third front-end (beside ``quicopt.pyomo`` and ``quicopt.mathopt``), for authors
+A third importer (beside ``quicopt.pyomo`` and ``quicopt.mathopt``), for authors
 already holding a `PuLP <https://coin-or.github.io/pulp/>`_ model. There is no
 expression tree to walk: a PuLP ``LpAffineExpression`` *is* a mapping from variable
 to coefficient, so the objective ``offset + Σ cᵢxᵢ`` and each constraint
-``Σ cᵢxᵢ + k ⋈ 0`` are read off directly, with variable bounds + category into
+``Σ cᵢxᵢ + k ⋈ 0`` are read off directly, with variable bounds and category into
 ``VarDecl`` and the constraint rows into ``Zero``/``Nonneg``. An absent PuLP bound
-(``None``) is ±Inf — a free direction.
+(``None``) means unbounded in that direction (±Inf).
 
-PuLP is linear by construction, so the supported surface is exactly LP / MILP: it
-has no quadratic expression type, hence no QUBO to import (unlike ``quicopt.mathopt``,
-which can express one). Everything a PuLP model can say, the IR serves.
+PuLP is linear by construction, so what is supported is exactly LP / MILP: it has
+no quadratic expression type, hence no QUBO to import (unlike ``quicopt.mathopt``,
+which can express one). Everything a PuLP model can say, Quicopt can carry.
 
 Requires the optional ``[pulp]`` extra (``pip install -e '.[pulp]'``).
 """
@@ -36,7 +36,7 @@ _RANGE = {
 
 
 def _affine(expr):
-    """Read a PuLP ``LpAffineExpression``'s variable terms as an IR expression.
+    """Read a PuLP ``LpAffineExpression``'s variable terms as a Quicopt expression.
 
     The expression's own ``constant`` is *not* included — the objective folds it in
     as an offset, a constraint carries it as the negated bound.
@@ -45,13 +45,13 @@ def _affine(expr):
         expr: The PuLP ``LpAffineExpression`` (a variable → coefficient mapping).
 
     Returns:
-        Expression: ``Σ cᵢxᵢ`` as an IR expression, ``Const(0.0)`` if empty.
+        Expression: ``Σ cᵢxᵢ`` as a Quicopt expression, ``Const(0.0)`` if empty.
     """
     return _sum([_scaled(c, Var(v.name)) for v, c in expr.items()])
 
 
 def _decl(v):
-    """Convert a PuLP ``LpVariable`` into an IR ``VarDecl``.
+    """Convert a PuLP ``LpVariable`` into a ``VarDecl``.
 
     A PuLP binary declares itself as an integer pinned to ``[0, 1]`` — hence the
     ``isBinary`` test precedes ``isInteger``, which is true of both. An absent bound
@@ -72,12 +72,12 @@ def _decl(v):
 
 
 def import_model(prob):
-    """Convert a PuLP ``LpProblem`` into Quicopt's ``Program`` IR.
+    """Convert a PuLP ``LpProblem`` into a Quicopt ``Program``.
 
     Variables are named by their PuLP name, matching ``quicopt.mathopt`` (and unlike
     ``quicopt.pyomo``'s positional names), so solutions line up with what the author
     wrote. A problem with no objective set is a feasibility problem — PuLP's own
-    reading — and lowers to a constant ``0`` objective. Two variables sharing a name
+    reading — and becomes a constant ``0`` objective. Two variables sharing a name
     **raise**: PuLP sanitizes names, so distinct variables can collide, and importing
     them would silently merge them into one.
     """

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "quicopt"
 version = "0.3.1"
-description = "Python client for the Quicopt service — author models, emit the Quicopt wire IR."
+description = "Python client for the Quicopt optimization service — write a model in Pyomo, MathOpt or PuLP and solve it."
 readme = "README.md"
 requires-python = ">=3.9"
 license = "Apache-2.0"
@@ -19,12 +19,12 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
-dependencies = []                 # the core (ir + wire) is stdlib-only, by design
+dependencies = []                 # the model + the encoder are stdlib-only, by design
 
 [project.optional-dependencies]
-pyomo   = ["pyomo>=6"]            # the Pyomo front-end importer lives in quicopt.pyomo
-mathopt = ["ortools>=9"]          # the OR-Tools MathOpt front-end lives in quicopt.mathopt
-pulp    = ["pulp>=2"]             # the PuLP front-end importer lives in quicopt.pulp
+pyomo   = ["pyomo>=6"]            # the Pyomo importer lives in quicopt.pyomo
+mathopt = ["ortools>=9"]          # the OR-Tools MathOpt importer lives in quicopt.mathopt
+pulp    = ["pulp>=2"]             # the PuLP importer lives in quicopt.pulp
 test    = ["pytest"]
 docs    = [                       # the API-reference site (mkdocs build / mkdocs serve)
     "mkdocs-material>=9",
