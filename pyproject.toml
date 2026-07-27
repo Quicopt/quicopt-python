@@ -33,9 +33,9 @@ docs    = [                       # the API-reference site (mkdocs build / mkdoc
 ]
 
 [project.urls]
-Homepage = "https://github.com/timbode/quicopt-python"
-Repository = "https://github.com/timbode/quicopt-python"
-Documentation = "https://timbode.github.io/quicopt-python/"
+Homepage = "https://github.com/Quicopt/quicopt-python"
+Repository = "https://github.com/Quicopt/quicopt-python"
+Documentation = "https://quicopt.github.io/quicopt-python/"
 
 [tool.setuptools.packages.find]
 where = ["src"]
