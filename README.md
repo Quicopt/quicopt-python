@@ -2,8 +2,8 @@
 
 [![PyPI](https://img.shields.io/pypi/v/quicopt.svg)](https://pypi.org/project/quicopt/)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://pypi.org/project/quicopt/)
-[![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://timbode.github.io/quicopt-python/)
-[![License: Apache 2.0](https://img.shields.io/pypi/l/quicopt.svg)](https://github.com/timbode/quicopt-python/blob/main/LICENSE)
+[![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://quicopt.github.io/quicopt-python/)
+[![License: Apache 2.0](https://img.shields.io/pypi/l/quicopt.svg)](https://github.com/Quicopt/quicopt-python/blob/main/LICENSE)
 
 The Python client for the [Quicopt](https://quicopt.com) optimization service.
 
@@ -17,7 +17,7 @@ Write the model with the Python modeling library you already use —
 service and hands back the answer. There is no solver on your machine; the service
 does the solving.
 
-Full documentation: **<https://timbode.github.io/quicopt-python/>**
+Full documentation: **<https://quicopt.github.io/quicopt-python/>**
 
 ## Install
 
@@ -134,4 +134,4 @@ extras, skips without them).
 
 ## License
 
-Apache License 2.0 — see [`LICENSE`](https://github.com/timbode/quicopt-python/blob/main/LICENSE). (c) 2026 Tim Bode, PGI-12, Forschungszentrum Jülich.
+Apache License 2.0 — see [`LICENSE`](https://github.com/Quicopt/quicopt-python/blob/main/LICENSE). (c) 2026 Tim Bode, PGI-12, Forschungszentrum Jülich.

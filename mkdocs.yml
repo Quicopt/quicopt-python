@@ -1,8 +1,8 @@
 site_name: quicopt
 site_description: Python client for the Quicopt optimization service — write a model in Pyomo, MathOpt or PuLP and solve it.
-site_url: https://timbode.github.io/quicopt-python/
-repo_url: https://github.com/timbode/quicopt-python
-repo_name: timbode/quicopt-python
+site_url: https://quicopt.github.io/quicopt-python/
+repo_url: https://github.com/Quicopt/quicopt-python
+repo_name: Quicopt/quicopt-python
 copyright: Copyright &copy; 2026 Tim Bode, PGI-12, Forschungszentrum Jülich
 
 theme:
