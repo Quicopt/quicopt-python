@@ -70,7 +70,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - API reference:
-      - ir — a model as data: api/ir.md
+      - ir — intermediate representation: api/ir.md
       - wire — the encoder: api/wire.md
       - pyomo — read a Pyomo model: api/pyomo.md
       - mathopt — read a MathOpt model: api/mathopt.md

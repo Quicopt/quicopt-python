@@ -10,9 +10,11 @@ published, language-neutral form the service reads. Nothing is solved here; see
 
 Steps:
   ir      — the ``Program``: a model as plain data, whichever library wrote it
+            (short for *intermediate representation*)
   wire    — ``Program`` → the bytes the service reads
   pyomo   — a Pyomo model → ``Program``
   mathopt — an OR-Tools MathOpt model → ``Program``
+  pulp    — a PuLP model → ``Program``
   client  — POST those bytes to the service and read the result (HTTP, stdlib)
 """
 from .ir import (Const, Param, Var, Apply, Reduce, SetRef,

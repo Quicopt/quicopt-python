@@ -45,8 +45,8 @@ Example:
 
     The solution is keyed by the MathOpt names, so it reads back against the
     model that was written. Inside the ``Program``, the row has become
-    ``5 − (x + 2·y) ≥ 0``: an inequality is *one* sign convention in the IR, so
-    ``≤`` is carried by negating.
+    ``5 − (x + 2·y) ≥ 0``: an inequality has *one* sign convention in a
+    ``Program``, so ``≤`` is carried by negating.
 """
 from __future__ import annotations
 

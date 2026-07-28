@@ -39,7 +39,7 @@ Example:
     Variables are named positionally, because Pyomo has already expanded indexed
     components and declaration order is what is left to identify them by. Inside
     the ``Program``, the ``≤`` row has become ``5 − (x1 + 2·x2) ≥ 0``: an
-    inequality is *one* sign convention in the IR, so ``≤`` is carried by
+    inequality has *one* sign convention in a ``Program``, so ``≤`` is carried by
     negating.
 """
 from __future__ import annotations

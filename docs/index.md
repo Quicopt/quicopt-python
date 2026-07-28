@@ -52,9 +52,10 @@ build a [`Program`][quicopt.ir.Program] (directly, or with one of the
 ## How it fits together
 
 ```
-your model ──import_model──▶ Program (ir) ──encode──▶ bytes ──▶ service
- (Pyomo,                     the same model as        what travels
-  MathOpt, PuLP)             plain data               over the network
+your model ──import_model──▶ Program ──encode──▶ bytes ──▶ service
+ (Pyomo,                     the same           what travels
+  MathOpt, PuLP)             model as           over the network
+                             plain data
 ```
 
 `Program` is what a model *is* to Quicopt, whichever library wrote it: variables,
@@ -64,7 +65,8 @@ Python, Julia and Ruby clients alike.
 
 See the **API reference** for each step:
 
-- [`ir`](api/ir.md) — the `Program`: a model as plain data.
+- [`ir`](api/ir.md) — the *intermediate representation*: the `Program`, a model
+  as plain data.
 - [`wire`](api/wire.md) — `Program` → the bytes the service reads.
 - [`pyomo`](api/pyomo.md) — a Pyomo model → `Program`.
 - [`mathopt`](api/mathopt.md) — an OR-Tools MathOpt model → `Program`.

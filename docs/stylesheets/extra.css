@@ -78,3 +78,16 @@
 [data-md-color-scheme="slate"] .md-logo img {
   content: url("../assets/quicopt-icon-white.svg");
 }
+
+/* ── Worked examples read at the body's size ──────────────────────────────────
+   A docstring `Example:` renders as a <details>, which Material types at .64rem
+   against the body's .8rem — and the .85em code shrink then compounds on top,
+   leaving the examples at roughly two thirds of the prose around them. They are
+   the part most worth reading, not an aside, so they get the body size; that
+   also puts an example's code at the same size as a fenced block on any other
+   page. Raise the .8rem here to scale every admonition together. */
+
+.md-typeset .admonition,
+.md-typeset details {
+  font-size: .8rem;
+}
