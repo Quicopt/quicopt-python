@@ -17,6 +17,36 @@ second-order-cone / SOS / indicator constraints, multiple objectives) **raises**
 it is a gap to close in the service, never silently dropped here.
 
 Requires the optional ``[mathopt]`` extra (``pip install -e '.[mathopt]'``).
+
+Example:
+    Maximize ``3x + 5y`` subject to ``x + 2y ≤ 5``, with ``0 ≤ x ≤ 4`` and ``y``
+    binary:
+
+    ```python
+    from ortools.math_opt.python import mathopt
+    from quicopt import Client
+
+    model = mathopt.Model(name="mix")
+    x = model.add_variable(lb=0.0, ub=4.0, name="x")
+    y = model.add_binary_variable(name="y")
+    model.add_linear_constraint(x + 2 * y <= 5.0)
+    model.maximize(3 * x + 5 * y)
+
+    result = Client().solve(model)            # the import below happens inside
+    print(result.status, result.objective)    # optimal 14.0
+    print(result.solution)                    # {'x': 3.0, 'y': 1.0}
+    ```
+
+    [`Client.solve`][quicopt.client.Client.solve] takes the MathOpt model as it
+    stands and calls this module on the way out, so the import is not a step to
+    perform — reach for `import_model` only to hold the ``Program`` itself. It
+    accepts either the high-level ``mathopt.Model`` above or the ``ModelProto``
+    it exports.
+
+    The solution is keyed by the MathOpt names, so it reads back against the
+    model that was written. Inside the ``Program``, the row has become
+    ``5 − (x + 2·y) ≥ 0``: an inequality is *one* sign convention in the IR, so
+    ``≤`` is carried by negating.
 """
 from __future__ import annotations
 

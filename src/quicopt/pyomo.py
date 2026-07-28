@@ -11,6 +11,36 @@ has already expanded indexed components).
 
 An operator the service does not know is a gap to close in the service, never
 papered over here.
+
+Example:
+    Maximize ``3x + 5y`` subject to ``x + 2y ≤ 5``, with ``0 ≤ x ≤ 4`` and ``y``
+    binary:
+
+    ```python
+    import pyomo.environ as pyo
+    from quicopt import Client
+
+    m = pyo.ConcreteModel()
+    m.x = pyo.Var(bounds=(0, 4))
+    m.y = pyo.Var(domain=pyo.Binary)
+    m.cap = pyo.Constraint(expr=m.x + 2 * m.y <= 5)
+    m.obj = pyo.Objective(expr=3 * m.x + 5 * m.y, sense=pyo.maximize)
+
+    result = Client().solve(m)                # the import below happens inside
+    print(result.status, result.objective)    # optimal 14.0
+    print(result.solution)                    # {'x1': 3.0, 'x2': 1.0}
+    ```
+
+    [`Client.solve`][quicopt.client.Client.solve] takes the Pyomo model as it
+    stands and calls this module on the way out, so the import is not a step to
+    perform — reach for `import_model` only to hold the ``Program`` itself.
+
+    Note what the solution is keyed by: ``x1``/``x2``, not ``m.x``/``m.y``.
+    Variables are named positionally, because Pyomo has already expanded indexed
+    components and declaration order is what is left to identify them by. Inside
+    the ``Program``, the ``≤`` row has become ``5 − (x1 + 2·x2) ≥ 0``: an
+    inequality is *one* sign convention in the IR, so ``≤`` is carried by
+    negating.
 """
 from __future__ import annotations
 

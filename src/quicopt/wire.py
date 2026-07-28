@@ -16,6 +16,35 @@ drop as a default. That exactness is what the encoder is judged on (see
 Protobuf crib: a field is ``tag = (number<<3 | wiretype)`` then the payload;
 wiretype 0=varint, 1=fixed64 (doubles, little-endian), 2=length-delimited (strings,
 embedded messages, repeated). Embedded messages are length-delimited.
+
+Example:
+    ```python
+    import pulp
+    from quicopt import Client
+    from quicopt.pulp import import_model
+    from quicopt.wire import encode
+
+    prob = pulp.LpProblem("mix", pulp.LpMaximize)
+    x = pulp.LpVariable("x", lowBound=0, upBound=4)
+    y = pulp.LpVariable("y", cat="Binary")
+    prob += 3 * x + 5 * y
+    prob += x + 2 * y <= 5
+
+    body = encode(import_model(prob))         # 209 bytes
+    result = Client().solve(body)             # bytes solve like a model
+    print(result.status, result.objective)    # optimal 14.0
+    ```
+
+    Encoding is normally invisible: [`Client.solve`][quicopt.client.Client.solve]
+    does it for you, and what it POSTs is exactly these bytes. Reach for `encode`
+    to send them yourself, store them, or check them — and note that
+    `solve` takes the bytes back, so an encoded model is a portable artifact,
+    not an internal step.
+
+    ``body`` is the whole request: no session, no dialect, no order the encoder
+    gets to choose. That is what makes "the bytes are identical" a testable claim
+    rather than a hope, and it is what ``tests/test_wire_golden.py`` checks
+    against committed goldens.
 """
 from __future__ import annotations
 

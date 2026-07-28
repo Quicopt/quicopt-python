@@ -16,6 +16,37 @@ no quadratic expression type, hence no QUBO to import (unlike ``quicopt.mathopt`
 which can express one). Everything a PuLP model can say, Quicopt can carry.
 
 Requires the optional ``[pulp]`` extra (``pip install -e '.[pulp]'``).
+
+Example:
+    Maximize ``3x + 5y`` subject to ``x + 2y ≤ 5``, with ``0 ≤ x ≤ 4`` and ``y``
+    binary:
+
+    ```python
+    import pulp
+    from quicopt import Client
+
+    prob = pulp.LpProblem("mix", pulp.LpMaximize)
+    x = pulp.LpVariable("x", lowBound=0, upBound=4)
+    y = pulp.LpVariable("y", cat="Binary")
+    prob += 3 * x + 5 * y                     # the first `+=` is the objective
+    prob += x + 2 * y <= 5                    # every later one a constraint
+
+    result = Client().solve(prob)             # the import below happens inside
+    print(result.status, result.objective)    # optimal 14.0
+    print(result.solution)                    # {'x': 3.0, 'y': 1.0}
+    ```
+
+    [`Client.solve`][quicopt.client.Client.solve] takes the PuLP problem as it
+    stands and calls this module on the way out, so the import is not a step to
+    perform — reach for `import_model` only to hold the ``Program`` itself. No
+    PuLP solver runs: ``prob.solve()`` is not called, and no solver need be
+    installed.
+
+    The solution is keyed by the PuLP names. Inside the ``Program``, the row has
+    become ``5 − (x + 2·y) ≥ 0`` — an inequality is *one* sign convention in the
+    IR, so ``≤`` is carried by negating — and that ``Program`` is byte-identical
+    to the one ``quicopt.mathopt`` builds from the same model written in MathOpt:
+    what a model *is* to Quicopt does not depend on who wrote it.
 """
 from __future__ import annotations
 
