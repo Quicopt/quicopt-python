@@ -20,6 +20,43 @@ Two entry points mirror the two service endpoints:
 
 A non-2xx response raises :class:`QuicoptError`, carrying the service's stable
 ``reason`` code and the framed ``display`` text.
+
+Example:
+    Maximize ``3x + 5y`` subject to ``x + 2y ≤ 5``, with ``0 ≤ x ≤ 4`` and ``y``
+    binary:
+
+    ```python
+    import pulp
+    from quicopt import Client
+
+    prob = pulp.LpProblem("mix", pulp.LpMaximize)
+    x = pulp.LpVariable("x", lowBound=0, upBound=4)
+    y = pulp.LpVariable("y", cat="Binary")
+    prob += 3 * x + 5 * y
+    prob += x + 2 * y <= 5
+
+    result = Client().solve(prob)                 # read, encode, POST, wait
+    print(result.status, result.objective)        # optimal 14.0
+    print(result.solution)                        # {'x': 3.0, 'y': 1.0}
+    print(result.model_class)                     # milp
+    print(result.display)                         # the service's own summary
+    ```
+
+    The model is passed as it stands — Pyomo, MathOpt or PuLP; the matching
+    importer is chosen by type, so nothing here changes with the library, and a
+    :class:`~quicopt.ir.Program` or already-encoded bytes are accepted too. No
+    solver runs locally and none need be installed. Which kind of model it was is
+    the service's finding, reported back as ``model_class``, not something to
+    declare.
+
+    For a long solve, :meth:`Client.submit` returns immediately with a
+    :class:`Job` and :meth:`Job.result` waits on it:
+
+    ```python
+    job = Client().submit(prob, project="pricing-study")
+    print(job.status()["status"])                 # queued
+    result = job.result(timeout=600)              # poll until done
+    ```
 """
 from __future__ import annotations
 

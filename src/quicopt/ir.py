@@ -10,6 +10,43 @@ constraints, with no trace of the library that wrote it. An importer
 ``Program`` is the service's published contract — these types track it, they never
 fork it. Index tuple entries are ``int`` (a concrete coordinate) or ``str`` (a
 bound index symbol); a bare string is never data, so the mapping is total.
+
+Example:
+    Maximize ``3x + 5y`` subject to ``x + 2y ≤ 5``, with ``0 ≤ x ≤ 4`` and ``y``
+    binary — written directly, with no modeling library in sight:
+
+    ```python
+    from quicopt import Client
+    from quicopt.ir import (Program, VarDecl, Constraint, Nonneg,
+                            Var, Const, Apply, CONTINUOUS, BINARY)
+
+    p = Program(
+        vars=[VarDecl("x", [], CONTINUOUS, 0.0, 4.0, 0.0),
+              VarDecl("y", [], BINARY, 0.0, 1.0, 0.0)],
+        objective=Apply("+", [Apply("*", [Const(3.0), Var("x")]),
+                              Apply("*", [Const(5.0), Var("y")])]),
+        sense="max",
+        constraints=[Constraint(
+            f=Apply("-", [Const(5.0),
+                          Apply("+", [Var("x"),
+                                      Apply("*", [Const(2.0), Var("y")])])]),
+            set=Nonneg())],
+    )
+
+    result = Client().solve(p)                # a Program solves like a model
+    print(result.status, result.objective)    # optimal 14.0
+    print(result.solution)                    # {'x': 3.0, 'y': 1.0}
+    ```
+
+    A constraint is a *set membership*: the expression ``f`` must land in ``set``,
+    so ``x + 2y ≤ 5`` is written as ``5 − (x + 2y) ∈ Nonneg`` — one sign
+    convention rather than two.
+
+    This is byte-for-byte the ``Program`` that ``quicopt.pulp`` builds from the
+    same model written in PuLP, and it solves to the same answer: an importer has
+    no private channel to the service, it only builds what is written here. Which
+    is why writing a ``Program`` by hand is a real option — for a model no
+    front-end expresses, or for generating one programmatically.
 """
 from __future__ import annotations
 
