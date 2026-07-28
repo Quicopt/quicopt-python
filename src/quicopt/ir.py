@@ -3,12 +3,13 @@
 """
 quicopt.ir — a model as plain data.
 
-A ``Program`` is what a model *is* to Quicopt: variables, expressions and
-constraints, with no trace of the library that wrote it. An importer
-(``quicopt.pyomo``, ``quicopt.mathopt``, ``quicopt.pulp``) builds one;
-``quicopt.wire`` encodes it to the bytes the service reads. The shape of a
-``Program`` is the service's published contract — these types track it, they never
-fork it. Index tuple entries are ``int`` (a concrete coordinate) or ``str`` (a
+The name is short for *intermediate representation*: the form a model takes
+between the library that wrote it and the service that solves it. A ``Program``
+is exactly that form — variables, expressions and constraints, with no trace of
+the library it came from. An importer (``quicopt.pyomo``, ``quicopt.mathopt``,
+``quicopt.pulp``) builds one; ``quicopt.wire`` encodes it to the bytes the
+service reads. The shape of a ``Program`` is the service's published contract —
+these types track it, they never fork it. Index tuple entries are ``int`` (a concrete coordinate) or ``str`` (a
 bound index symbol); a bare string is never data, so the mapping is total.
 
 Example:

@@ -43,9 +43,9 @@ Example:
     installed.
 
     The solution is keyed by the PuLP names. Inside the ``Program``, the row has
-    become ``5 − (x + 2·y) ≥ 0`` — an inequality is *one* sign convention in the
-    IR, so ``≤`` is carried by negating — and that ``Program`` is byte-identical
-    to the one ``quicopt.mathopt`` builds from the same model written in MathOpt:
+    become ``5 − (x + 2·y) ≥ 0`` — an inequality has *one* sign convention there,
+    so ``≤`` is carried by negating — and that ``Program`` is byte-identical to
+    the one ``quicopt.mathopt`` builds from the same model written in MathOpt:
     what a model *is* to Quicopt does not depend on who wrote it.
 """
 from __future__ import annotations
