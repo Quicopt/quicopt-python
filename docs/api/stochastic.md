@@ -1,0 +1,3 @@
+# `quicopt.stochastic`
+
+::: quicopt.stochastic
