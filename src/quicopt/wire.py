@@ -51,8 +51,9 @@ from __future__ import annotations
 import struct
 from io import BytesIO
 
-from .ir import (Const, Param, Var, Apply, Reduce, SetRef,
-                 Zero, Nonneg, Indicator, VarDecl, IndexSet, Program)
+from .ir import (Const, Param, Var, Apply, Reduce, SetRef, SourceRef,
+                 Zero, Nonneg, Indicator, Parametric, Empirical,
+                 VarDecl, IndexSet, Program)
 
 SCHEMA_VERSION = 1               # co-versions with the .proto package (…v1)
 
@@ -337,15 +338,16 @@ def _enc_expr(io, e):
 
     The node's concrete type selects the active ``oneof`` case — ``Const``→1
     (double), ``Param``→2, ``Var``→3, ``Apply``→4 (op + args), ``Reduce``→5
-    (op, bound index, set, body, optional guard). The case is *always* emitted so
-    that ``Const(0.0)`` survives round-trip rather than collapsing to an empty
-    message.
+    (op, bound index, set, body, optional guard), ``SourceRef``→6 (name). The
+    case is *always* emitted so that ``Const(0.0)`` survives round-trip rather
+    than collapsing to an empty message.
 
     Args:
         io: The byte sink.
         e: An expression node (:class:`~quicopt.ir.Const` /
             :class:`~quicopt.ir.Param` / :class:`~quicopt.ir.Var` /
-            :class:`~quicopt.ir.Apply` / :class:`~quicopt.ir.Reduce`).
+            :class:`~quicopt.ir.Apply` / :class:`~quicopt.ir.Reduce` /
+            :class:`~quicopt.ir.SourceRef`).
 
     Returns:
         None. The fields are appended to ``io``.
@@ -374,6 +376,8 @@ def _enc_expr(io, e):
             if e.cond is not None:
                 _wmsg(b, 5, _expr_msg(e.cond))
         _wmsg(io, 5, _msg(build))
+    elif isinstance(e, SourceRef):
+        _wmsg(io, 6, _msg(lambda b: _wstr(b, 1, e.name)))
     else:
         raise TypeError(f"wire: not an Expression: {e!r}")
 
@@ -575,14 +579,56 @@ def _enc_param_table(io, name, tbl):
         _wmsg(io, 2, _msg(build))
 
 
+def _enc_source(io, name, s):
+    """Encode one named random variable into a ``SourceDecl`` message body.
+
+    Field 1 is the name it is referenced by; the ``oneof`` case that follows says
+    how it is drawn — ``Parametric``→2 (a distribution head plus its parameter
+    expressions) or ``Empirical``→3 (a scenario column). The column is *packed*:
+    one length-delimited field holding 8·R little-endian doubles, which is what a
+    protoc-generated encoder emits for a proto3 ``repeated double``.
+
+    Args:
+        io: The byte sink.
+        name: The name the source is declared and referenced under.
+        s: The declaration (:class:`~quicopt.ir.Parametric` /
+            :class:`~quicopt.ir.Empirical`).
+
+    Returns:
+        None. The fields are appended to ``io``.
+
+    Raises:
+        TypeError: If ``s`` is neither ``Parametric`` nor ``Empirical``.
+    """
+    _wstr(io, 1, name)
+    if isinstance(s, Parametric):
+        def build(b):
+            _wstr(b, 1, s.head)
+            for p in s.params:
+                _wmsg(b, 2, _expr_msg(p))
+        _wmsg(io, 2, _msg(build))
+    elif isinstance(s, Empirical):
+        column = b"".join(struct.pack("<d", float(x)) for x in s.data)
+        _wmsg(io, 3, _msg(lambda b: _wbytes(b, 1, column)))
+    else:
+        raise TypeError(f"wire: not a source declaration: {s!r}")
+
+
 def encode(prog: Program) -> bytes:
     """Encode a ``Program`` to the (v1) bytes the service reads.
 
     The top-level message in schema order: index sets (1), indexed sets (2),
     param tables (3), variable declarations (4), the objective expression (5), the
-    sense string (6), constraints (7), and the ``fix`` pins (8). The order-free
-    tables (``indexed_sets``, ``params``, ``fix``) are written in sorted-key order
-    so equal Programs encode to equal bytes — the property the golden test pins.
+    sense string (6), constraints (7), the ``fix`` pins (8), and the stochastic
+    layer — scenario count (9), seed (10), source declarations (11). The order-free
+    tables (``indexed_sets``, ``params``, ``fix``, ``sources``) are written in
+    sorted-key order so equal Programs encode to equal bytes — the property the
+    golden test pins.
+
+    The two scenario scalars are omitted when they carry their default of 1, so a
+    deterministic model encodes to exactly the bytes it did before the stochastic
+    layer existed. That is also why 1, not 0, is the default: protobuf cannot tell
+    a zero from an absent field, so 0 is not a value this wire can carry.
 
     Args:
         prog: The :class:`~quicopt.ir.Program` to encode.
@@ -611,6 +657,12 @@ def encode(prog: Program) -> bytes:
             _wmsg(b, 2, _idx_msg(idx))
             _wdouble(b, 3, prog.fix[key])
         _wmsg(io, 8, _msg(build))
+    if prog.scenarios != 1:
+        _wvarint(io, 9, prog.scenarios)
+    if prog.scenario_seed != 1:
+        _wvarint(io, 10, prog.scenario_seed)
+    for name in sorted(prog.sources.keys()):
+        _wmsg(io, 11, _msg(lambda b, name=name: _enc_source(b, name, prog.sources[name])))
     return io.getvalue()
 
 
