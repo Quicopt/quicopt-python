@@ -1,19 +1,24 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: (c) 2026 Tim Bode, PGI-12, Forschungszentrum Jülich
 """
-quicopt.stochastic — models whose data is not known when the decision is made.
+quicopt.stochastic — optimization under uncertainty, written in Pyomo.
 
-Some decisions have to be taken before the numbers are in: how much to stock
-before demand arrives, what to commit before prices move. Such a model is an
-ordinary Pyomo model with two additions. A variable can be given a
-*distribution*, which makes it a random variable rather than something to
-choose. And a quantity that depends on one is random too, so it has to be closed
-with an *aggregator* — an expected value, a tail risk, a probability — before it
-can be an objective or a constraint, because only a number can be minimized.
+Part of a model's data is often unknown when the decision has to be made: demand,
+prices, yields, arrival times. Declare that data as random variables carrying
+distributions, and the model is solved over a sample of scenarios drawn from them.
 
-Nothing is evaluated here. A distribution and an aggregator travel to the service
-as data, which is why they can be written at all: Pyomo has no evaluator for
-them, and needs none.
+Two rules describe the whole surface:
+
+- A Pyomo variable given a distribution by [`set_distribution`][quicopt.stochastic.set_distribution]
+  is a random variable, not a decision variable. Every use of the variable references the same sample.
+- An expression containing a random variable is itself random, and cannot serve as an
+  objective or a constraint until an aggregator reduces it over the scenarios:
+  [`expectation`][quicopt.stochastic.expectation] for the mean,
+  [`cvar`][quicopt.stochastic.cvar] for the tail,
+  [`prob`][quicopt.stochastic.prob] for a chance constraint.
+
+[`set_scenarios`][quicopt.stochastic.set_scenarios] sets how many scenarios are drawn
+and from which seed. Both belong to the model, so repeated solves see the same sample.
 
 Example:
     Order ``x`` units at 3 apiece against demand you will only learn later, pay
@@ -40,14 +45,14 @@ Example:
     print(result.solution)                      # {'x1': 107.9…}
     ```
 
-    Using ``m.demand`` twice refers to the *same* draw — one name is one random
-    variable, so two independent ones are two variables with two names.
+    Every mention of ``m.demand`` refers to the same sample. Two independent random
+    variables are two Pyomo variables under two names.
 
-    These constructors need Pyomo, so they live here rather than in the top-level
-    package, which stays dependency-free. ``maximum`` and ``minimum`` are here for
-    a duller reason: Pyomo has the expressions but publishes no way to build them,
-    and ``max(a, b)`` cannot work — Python would have to decide which is larger,
-    which is exactly what is not yet known.
+    ``maximum`` and ``minimum`` build the kinked expressions that price recourse:
+    ``maximum(demand - stock, 0)`` is the shortfall, and zero when there is none.
+
+    Models written this way are solved by the service. Attaching a local solver to
+    one fails — an expectation has no value until the scenarios are drawn.
 """
 from __future__ import annotations
 
@@ -69,22 +74,19 @@ __all__ = [
 # ── distributions ───────────────────────────────────────────────────────────
 
 class Distribution:
-    """A distribution to draw from: a service catalog ``head`` and its parameters.
+    """Any distribution the service supports, named by ``head``.
 
-    :class:`Normal` and its siblings are the named forms; this base class is the
-    general one, and takes any head the service knows — so a distribution that
-    the service has learned and this client has not yet been taught is still
-    reachable, without waiting for a release.
+    Use :class:`Normal` where it fits; use this for a distribution that has no
+    named class here yet, as in ``Distribution("uniform", 0.0, 1.0)``.
 
-    A parameter is a number or an ordinary deterministic Pyomo expression. The
-    latter is what makes a distribution whose mean is itself a decision — an
-    *endogenous* one — nothing special: it is the same grammar.
+    A parameter may be a number or a deterministic Pyomo expression. An expression
+    gives an *endogenous* distribution — one whose parameters depend on the
+    decision, such as a demand whose mean rises with the price you set.
     """
 
     def __init__(self, head, *params):
-        """Declare a draw from ``head``, the distribution's name in the service's
-        operator catalog, with the given parameters — each a number or a
-        deterministic Pyomo expression."""
+        """Draw from the distribution ``head`` with the given parameters, each a
+        number or a deterministic Pyomo expression."""
         self.head = str(head)
         self.params = params
 
@@ -158,22 +160,18 @@ def _declare(model):
 
 
 def set_distribution(model, v, dist, name=None):
-    """Make the Pyomo variable ``v`` random, drawn from ``dist``.
+    """Turn the Pyomo variable ``v`` into a random variable drawn from ``dist``.
 
-    ``v`` stops being a variable the solver chooses and becomes one it is handed:
-    every use of it refers to the same draw, per scenario. Independent random
-    variables are declared separately, under distinct names.
+    ``v`` is no longer a decision variable: the solver is handed its value rather
+    than choosing it, and every use of ``v`` means the same sample within a scenario.
 
-    Do not give ``v`` bounds or a domain — it carries a distribution, which is
-    what says where it lives. The import rejects a source that has them.
+    ``dist`` is a :class:`Distribution` such as ``Normal(100.0, 15.0)``, or an
+    :class:`~quicopt.ir.Empirical` column holding one observed value per scenario.
+    ``name`` defaults to the variable's own name and is what identifies the random
+    variable, so two independent ones need two names. Returns ``v``.
 
-    ``v`` is a scalar ``Var`` or one element of an indexed one, belonging to
-    ``model``. ``dist`` says how it is drawn: a :class:`Distribution` such as
-    :class:`Normal`, or an :class:`~quicopt.ir.Empirical` column carrying one
-    value per scenario. ``name`` is what it is declared and referenced under,
-    defaulting to the variable's own name — and it is the identity that matters,
-    since two references under one name are one random variable. The variable
-    itself is returned, so the call can be chained onto its declaration.
+    Give ``v`` no bounds and no domain. Its distribution already says what values
+    it takes, and a variable carrying both is rejected on import.
 
     Raises:
         TypeError: If ``v`` is not a Pyomo variable, or ``dist`` is neither a
@@ -198,22 +196,21 @@ def set_distribution(model, v, dist, name=None):
 
 
 def set_scenarios(model, n, seed=None):
-    """Set how many scenarios the model is solved over, and optionally the seed.
+    """Draw ``n`` scenarios, optionally from a given ``seed``.
 
-    Both are part of the model rather than of the solve: they pin which sample is
-    drawn, so the same model always faces the same scenarios and two solves are
-    comparable. Left unset, the model is solved over a single scenario — the
-    degenerate case, where every random variable takes one value.
+    More scenarios estimate the true problem more closely and cost more to solve.
+    Both settings belong to the model, not to the solve, so the same model always
+    faces the same sample and two solves of it are comparable. Left unset, a model
+    is solved over one scenario, where every random variable takes a single value.
 
-    ``n`` is the number of scenarios and ``seed`` the seed they are drawn from,
-    both at least 1. Leaving ``seed`` out keeps the previous one, which is 1
-    until it is set.
+    ``n`` and ``seed`` are both at least 1. Leaving ``seed`` out keeps the current
+    one.
 
     Raises:
-        ValueError: If ``n`` or ``seed`` is below 1. Zero is not merely invalid
-            but unrepresentable: the wire cannot distinguish it from an absent
-            field, so it would arrive as "use the default".
+        ValueError: If ``n`` or ``seed`` is below 1.
     """
+    # 0 is rejected rather than defaulted: protobuf cannot tell a zero from an absent
+    # field, so a 0 sent here would arrive at the service as "use your default".
     if n < 1:
         raise ValueError(f"a model is solved over at least 1 scenario, got {n}")
     record = _declare(model)
@@ -298,12 +295,11 @@ class _Aggregate(_ne.NumericExpression):
 def expectation(x):
     """The expected value of ``x`` over the scenarios.
 
-    The plainest way to close a random quantity: average it. What a solution
-    optimizes is then the average case, which says nothing about the bad ones —
-    see :func:`cvar` when those are the point.
+    Minimizing an expectation optimizes the average case and says nothing about
+    the bad ones; use :func:`cvar` when the bad ones are what matter.
 
-    ``x`` is a quantity depending on at least one random variable. What comes
-    back is an ordinary number as far as the rest of the model is concerned.
+    ``x`` is any expression containing a random variable. The result is
+    deterministic, and can be used anywhere a number can.
     """
     return _Aggregate("smean", [x])
 
@@ -311,14 +307,13 @@ def expectation(x):
 def cvar(x, alpha):
     """The conditional value at risk of ``x`` at level ``alpha``.
 
-    The mean of ``x`` over its worst ``1 − alpha`` fraction of scenarios: at
-    ``alpha = 0.95``, the average outcome across the worst 5%. Minimizing it
-    optimizes the bad tail rather than the average, which is what "robust"
-    usually means in practice.
+    The mean of ``x`` over its worst ``1 − alpha`` fraction of scenarios — at
+    ``alpha = 0.95``, the average of the worst 5%. Minimizing it optimizes the
+    tail instead of the average, and is the usual way to ask for a solution that
+    holds up in bad scenarios rather than merely on average.
 
-    ``x`` is a quantity depending on at least one random variable, and ``alpha``
-    the tail level, strictly between 0 and 1. The level has to be a plain number:
-    the wire carries it as a constant, so it cannot depend on a decision.
+    ``x`` is any expression containing a random variable. ``alpha`` is the tail
+    level, a plain number strictly between 0 and 1; it cannot depend on a decision.
 
     Raises:
         TypeError: If ``alpha`` is not a plain number.
@@ -338,21 +333,18 @@ def prob(relation):
 
         m.service = pyo.Constraint(expr=prob(m.demand - m.x <= 0) >= 0.9)
 
-    which reads as *demand is met in at least 90% of scenarios*. The comparison
-    is written inside the call rather than named by it (``prob_atmost(x, τ)``)
-    for one reason: there are two comparisons in that line, and only this way is
-    it unambiguous which one is being made a probability of.
+    which reads as *demand is met in at least 90% of scenarios*. Note that the
+    line holds two comparisons: the one inside ``prob`` is the event being
+    measured, the outer one is the service level demanded of it.
 
-    ``relation`` is a non-strict comparison, ``a <= b`` or ``a >= b``, with at
-    least one side depending on a random variable. What comes back is a
-    probability, between 0 and 1.
+    ``relation`` is a comparison, ``a <= b`` or ``a >= b``, with at least one side
+    containing a random variable. The result is a probability between 0 and 1.
 
     Raises:
-        TypeError: If the argument is not a comparison — an equality in
-            particular, whose probability is zero for any continuous quantity.
-        ValueError: If the comparison is strict. ``<`` and ``>`` have no
-            scenario counterpart, and against a continuous quantity they would
-            in any case mean the same as ``<=`` and ``>=``.
+        TypeError: If the argument is not a comparison. An equality is refused
+            too: for a continuous quantity its probability is zero.
+        ValueError: If the comparison is strict. Use ``<=`` or ``>=``, which for a
+            continuous quantity mean the same thing anyway.
     """
     if not isinstance(relation, InequalityExpression):
         raise TypeError("prob takes a comparison, as in prob(demand - x <= 0), "
@@ -372,11 +364,12 @@ def prob(relation):
 # ── the kinked pair Pyomo has but does not publish ──────────────────────────
 
 def maximum(*args):
-    """The largest of its arguments, as an expression rather than a decision.
+    """The largest of two or more expressions.
 
-    The recourse idiom is written with it — ``maximum(demand - stock, 0)`` is what
-    you are short by, which is 0 when you are not short at all. Takes two or more
-    quantities and gives back a Pyomo expression.
+    This is how recourse is priced: ``maximum(demand - stock, 0)`` is the
+    shortfall, and zero whenever stock covers demand. Python's built-in ``max``
+    cannot do this — it would have to compare the arguments, and their values are
+    not known yet.
 
     Raises:
         ValueError: If given fewer than two arguments.
@@ -385,9 +378,10 @@ def maximum(*args):
 
 
 def minimum(*args):
-    """The smallest of its arguments, as an expression rather than a decision.
+    """The smallest of two or more expressions.
 
-    Takes two or more quantities and gives back a Pyomo expression.
+    The counterpart of :func:`maximum` — ``minimum(demand, stock)`` is what you
+    actually sell.
 
     Raises:
         ValueError: If given fewer than two arguments.
