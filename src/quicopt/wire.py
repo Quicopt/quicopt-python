@@ -3,19 +3,10 @@
 """
 quicopt.wire — a ``Program`` → the bytes the service reads.
 
-A hand-written encoder of Quicopt's protobuf schema, using nothing but the standard
-library (the deliberate "no protoc" choice: the schema is small and frozen).
-Crucially the bytes are **identical** to what the service produces for the same
-model: the same fixed ordering of the order-free ``dict`` tables (so equal Programs
-encode to equal bytes), the same rule that a ``oneof`` case is always written (so
-``Const(0.0)`` survives), and the same rule that ``VarDecl.start`` and
-``ParamEntry.value`` are written even when ``0.0``, which protobuf would otherwise
-drop as a default. That exactness is what the encoder is judged on (see
-``tests/test_wire_golden.py``).
-
-Protobuf crib: a field is ``tag = (number<<3 | wiretype)`` then the payload;
-wiretype 0=varint, 1=fixed64 (doubles, little-endian), 2=length-delimited (strings,
-embedded messages, repeated). Embedded messages are length-delimited.
+Encoding is deterministic: the same model always produces the same bytes, and they
+are the bytes the service produces for that model too — checked against committed
+goldens in ``tests/test_wire_golden.py``. The encoder uses nothing outside the
+standard library, like the rest of the package.
 
 Example:
     ```python
@@ -55,10 +46,17 @@ from .ir import (Const, Param, Var, Apply, Reduce, SetRef, SourceRef,
                  Zero, Nonneg, Indicator, Parametric, Empirical,
                  VarDecl, IndexSet, Program)
 
+# Hand-rolled rather than protoc-generated: the schema is small and frozen, and the
+# byte-exactness the golden test pins is easier to hold with the encoder in view.
+# The rules that exactness turns on are documented at the functions enforcing them.
 SCHEMA_VERSION = 1               # co-versions with the .proto package (…v1)
 
 
 # ── low-level writers ───────────────────────────────────────────────────────
+#
+# Protobuf crib: a field is `tag = (number<<3 | wiretype)` then the payload;
+# wiretype 0=varint, 1=fixed64 (doubles, little-endian), 2=length-delimited
+# (strings, embedded messages, repeated). Embedded messages are length-delimited.
 
 def _putvarint(io, x):
     """Write an integer as a base-128 varint (LEB128, proto wiretype 0).
@@ -617,18 +615,10 @@ def _enc_source(io, name, s):
 def encode(prog: Program) -> bytes:
     """Encode a ``Program`` to the (v1) bytes the service reads.
 
-    The top-level message in schema order: index sets (1), indexed sets (2),
-    param tables (3), variable declarations (4), the objective expression (5), the
-    sense string (6), constraints (7), the ``fix`` pins (8), and the stochastic
-    layer — scenario count (9), seed (10), source declarations (11). The order-free
-    tables (``indexed_sets``, ``params``, ``fix``, ``sources``) are written in
-    sorted-key order so equal Programs encode to equal bytes — the property the
-    golden test pins.
-
-    The two scenario scalars are omitted when they carry their default of 1, so a
-    deterministic model encodes to exactly the bytes it did before the stochastic
-    layer existed. That is also why 1, not 0, is the default: protobuf cannot tell
-    a zero from an absent field, so 0 is not a value this wire can carry.
+    Two equal Programs always encode to equal bytes, whichever order their tables
+    happened to be built in. A model that declares no uncertainty encodes to exactly
+    the bytes it would have before the stochastic layer existed, so adding that
+    layer costs an ordinary model nothing.
 
     Args:
         prog: The :class:`~quicopt.ir.Program` to encode.
@@ -637,6 +627,11 @@ def encode(prog: Program) -> bytes:
         bytes: The message, deterministic and identical byte for byte to what the
         Quicopt service produces for the same model.
     """
+    # Fields in schema order (1–8 deterministic, 9–11 stochastic); the order-free
+    # tables are emitted sorted, which is what makes equal Programs equal bytes. The
+    # two scenario scalars are omitted at their default of 1, which is also why the
+    # default is 1 and not 0: protobuf cannot tell a zero from an absent field, so a
+    # 0 here would reach the service as "use your default".
     io = BytesIO()
     for s in prog.sets:
         _wmsg(io, 1, _msg(lambda b, s=s: _enc_index_set(b, s)))

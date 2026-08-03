@@ -8,9 +8,9 @@ between the library that wrote it and the service that solves it. A ``Program``
 is exactly that form — variables, expressions and constraints, with no trace of
 the library it came from. An importer (``quicopt.pyomo``, ``quicopt.mathopt``,
 ``quicopt.pulp``) builds one; ``quicopt.wire`` encodes it to the bytes the
-service reads. The shape of a ``Program`` is the service's published contract —
-these types track it, they never fork it. Index tuple entries are ``int`` (a concrete coordinate) or ``str`` (a
-bound index symbol); a bare string is never data, so the mapping is total.
+service reads. The shape of a ``Program`` is the service's published contract — these types track
+it, they never fork it. An index tuple entry is either an ``int``, a concrete
+coordinate, or a ``str``, the name of an index to bind.
 
 Example:
     Maximize ``3x + 5y`` subject to ``x + 2y ≤ 5``, with ``0 ≤ x ≤ 4`` and ``y``
@@ -44,10 +44,9 @@ Example:
     convention rather than two.
 
     This is byte-for-byte the ``Program`` that ``quicopt.pulp`` builds from the
-    same model written in PuLP, and it solves to the same answer: an importer has
-    no private channel to the service, it only builds what is written here. Which
-    is why writing a ``Program`` by hand is a real option — for a model no
-    front-end expresses, or for generating one programmatically.
+    same model written in PuLP, and it solves to the same answer. So writing a
+    ``Program`` by hand is a real option — for a model no front-end expresses, or
+    for generating one programmatically.
 """
 from __future__ import annotations
 

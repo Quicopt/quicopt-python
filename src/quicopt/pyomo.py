@@ -9,8 +9,8 @@ domain into ``VarDecl``, and each constraint into a ``Zero``/``Nonneg`` row. The
 result is a *flat* ``Program`` (one scalar ``VarDecl`` per Pyomo ``VarData``; Pyomo
 has already expanded indexed components).
 
-An operator the service does not know is a gap to close in the service, never
-papered over here.
+An operator the service does not support raises, rather than being approximated
+or dropped — so a model that imports is a model that means what it says.
 
 Example:
     Maximize ``3x + 5y`` subject to ``x + 2y ≤ 5``, with ``0 ≤ x ≤ 4`` and ``y``
@@ -37,10 +37,7 @@ Example:
 
     Note what the solution is keyed by: ``x1``/``x2``, not ``m.x``/``m.y``.
     Variables are named positionally, because Pyomo has already expanded indexed
-    components and declaration order is what is left to identify them by. Inside
-    the ``Program``, the ``≤`` row has become ``5 − (x1 + 2·x2) ≥ 0``: an
-    inequality has *one* sign convention in a ``Program``, so ``≤`` is carried by
-    negating.
+    components and declaration order is what is left to identify them by.
 """
 from __future__ import annotations
 
