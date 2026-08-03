@@ -8,9 +8,9 @@ between the library that wrote it and the service that solves it. A ``Program``
 is exactly that form — variables, expressions and constraints, with no trace of
 the library it came from. An importer (``quicopt.pyomo``, ``quicopt.mathopt``,
 ``quicopt.pulp``) builds one; ``quicopt.wire`` encodes it to the bytes the
-service reads. The shape of a ``Program`` is the service's published contract —
-these types track it, they never fork it. Index tuple entries are ``int`` (a concrete coordinate) or ``str`` (a
-bound index symbol); a bare string is never data, so the mapping is total.
+service reads. The shape of a ``Program`` is the service's published contract — these types track
+it, they never fork it. An index tuple entry is either an ``int``, a concrete
+coordinate, or a ``str``, the name of an index to bind.
 
 Example:
     Maximize ``3x + 5y`` subject to ``x + 2y ≤ 5``, with ``0 ≤ x ≤ 4`` and ``y``
@@ -44,10 +44,9 @@ Example:
     convention rather than two.
 
     This is byte-for-byte the ``Program`` that ``quicopt.pulp`` builds from the
-    same model written in PuLP, and it solves to the same answer: an importer has
-    no private channel to the service, it only builds what is written here. Which
-    is why writing a ``Program`` by hand is a real option — for a model no
-    front-end expresses, or for generating one programmatically.
+    same model written in PuLP, and it solves to the same answer. So writing a
+    ``Program`` by hand is a real option — for a model no front-end expresses, or
+    for generating one programmatically.
 """
 from __future__ import annotations
 
@@ -55,8 +54,9 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 
 __all__ = [
-    "Const", "Param", "Var", "Apply", "Reduce", "SetRef",
+    "Const", "Param", "Var", "Apply", "Reduce", "SetRef", "SourceRef",
     "Zero", "Nonneg", "Indicator",
+    "Parametric", "Empirical",
     "VarDecl", "IndexSet", "Constraint", "Program",
     "Domain", "CONTINUOUS", "INTEGER", "BINARY",
 ]
@@ -74,7 +74,7 @@ INTEGER = Domain.INTEGER
 BINARY = Domain.BINARY
 
 
-# ── Expression = Const | Param | Var | Apply | Reduce ───────────────────────
+# ── Expression = Const | Param | Var | Apply | Reduce | SourceRef ───────────
 
 class Expression:
     """Base of the expression grammar."""
@@ -128,6 +128,17 @@ class Reduce(Expression):
     cond: "Expression | None" = None    # keep a term only where cond ≠ 0
 
 
+@dataclass
+class SourceRef(Expression):
+    """A reference to a random variable declared in ``Program.sources``.
+
+    Identity lives in the name: every ``SourceRef("demand")`` denotes the *same*
+    draw, however many times the subtree containing it is copied, so a model's
+    correlation structure survives substitution and tree copying. Two independent
+    random variables are two declarations under two names."""
+    name: str
+
+
 # ── ConSet = Zero | Nonneg | Indicator ──────────────────────────────────────
 
 @dataclass
@@ -145,6 +156,31 @@ class Indicator:
     """``bin`` active (= 1) implies the body satisfies the ``inner`` ConSet."""
     bin: Var                    # the binary being active implies f ∈ inner
     inner: object               # ConSet
+
+
+# ── Source = Parametric | Empirical ─────────────────────────────────────────
+
+@dataclass
+class Parametric:
+    """A random variable drawn from a distribution ``head`` with ``params``.
+
+    ``head`` is a catalog operator (``"normal"``, …) and each parameter is an
+    ordinary deterministic expression — so a distribution whose mean is itself a
+    decision (an *endogenous* distribution) needs nothing the grammar does not
+    already have. A parameter containing a ``SourceRef`` is rejected by the
+    service: a distribution's parameters are data, not draws."""
+    head: str
+    params: list               # list[Expression]
+
+
+@dataclass
+class Empirical:
+    """A random variable given as a fixed scenario column of ``data``.
+
+    Exactly ``Program.scenarios`` values, one per scenario. Several empirical
+    columns are read at the same scenario index, so columns drawn jointly stay
+    correlated — which is how a joint distribution is expressed."""
+    data: list                 # list[float], length == Program.scenarios
 
 
 # ── variables, constraints, container ───────────────────────────────────────
@@ -183,7 +219,14 @@ class Constraint:
 class Program:
     """A complete optimization model: index sets and data tables, variable
     declarations, the objective and its ``sense``, the constraint rows, and any
-    per-index variable pins (``fix``)."""
+    per-index variable pins (``fix``).
+
+    A model under uncertainty adds three more: the random variables it draws
+    (``sources``), how many scenarios are drawn (``scenarios``) and the seed they
+    are drawn from (``scenario_seed``). The last two are model *data* — they pin
+    the sampled instance, so the same Program always sees the same draws. Left at
+    their defaults they say nothing, and the encoded bytes are those of a
+    deterministic model."""
     sets: list = field(default_factory=list)          # list[IndexSet]
     indexed_sets: dict = field(default_factory=dict)  # {name: {tuple: list}}  a[(i,)] -> [j…]
     params: dict = field(default_factory=dict)        # {name: {tuple: float}} p[(i,)], A[(i,j)]
@@ -192,3 +235,6 @@ class Program:
     sense: str = "min"                                # "min" | "max"
     constraints: list = field(default_factory=list)   # list[Constraint]
     fix: dict = field(default_factory=dict)           # {(varname, tuple): float} per-index pins
+    scenarios: int = 1                                # R — how many are drawn
+    scenario_seed: int = 1                            # the draw seed
+    sources: dict = field(default_factory=dict)       # {name: Parametric | Empirical}

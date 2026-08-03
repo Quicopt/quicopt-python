@@ -20,8 +20,8 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))                       # importable without an install
 
-from quicopt import (Const, Param, Var, Apply, Reduce, SetRef,         # noqa: E402
-                     Zero, Nonneg, Indicator,
+from quicopt import (Const, Param, Var, Apply, Reduce, SetRef, SourceRef,   # noqa: E402
+                     Zero, Nonneg, Indicator, Parametric, Empirical,
                      VarDecl, IndexSet, Constraint, Program,
                      CONTINUOUS, BINARY, encode)
 
@@ -82,11 +82,46 @@ def _indicator():                                           # u ⟹ x ≥ 0
         constraints=[Constraint(x, Indicator(u, Nonneg()), [])])
 
 
+def _stoch_parametric():                                    # sources, both scalars, aggregators
+    # One random variable and a decision taken before it is seen: buy x, pay for
+    # the mismatch, and hold the shortfall under 10% of scenarios.
+    x, d = Var("x"), SourceRef("demand")
+    return Program(
+        vars=[VarDecl("x", [], CONTINUOUS, 0.0, 200.0, 0.0)],
+        objective=Apply("+", [Apply("*", [Const(3.0), x]),
+                              Apply("smean", [Apply("abs", [Apply("-", [x, d])])])]),
+        sense="min",
+        constraints=[Constraint(
+            Apply("-", [Apply("sfreq_leq", [Apply("-", [d, x]), Const(0.0)]), Const(0.9)]),
+            Nonneg(), [])],
+        scenarios=512, scenario_seed=42,
+        sources={"demand": Parametric("normal", [Const(100.0), Const(15.0)])})
+
+
+def _stoch_empirical():                                     # both source kinds at once
+    # A scenario column beside a distribution whose mean is read from data, and a
+    # seed left at its default — so this fixture also pins the omitted field.
+    # Sorted emission (price before shock) is not the insertion order, on purpose.
+    x, price, shock = Var("x"), SourceRef("price"), SourceRef("shock")
+    return Program(
+        params={"μ": {(): 50.0}},
+        vars=[VarDecl("x", [], CONTINUOUS, 0.0, 100.0, 0.0)],
+        objective=Apply("+", [
+            Apply("smean", [Apply("*", [shock, Apply("-", [price, x])])]),
+            Apply("scvar", [Apply("-", [price, x]), Const(0.95)])]),
+        sense="min",
+        scenarios=4,
+        sources={"shock": Empirical([0.9, 1.0, 1.1, 1.3]),
+                 "price": Parametric("normal", [Param("μ"), Const(2.0)])})
+
+
 FIXTURES = {
     "scalar_nlp": _scalar_nlp,
     "bounds_zero_start": _bounds_zero_start,
     "indexed": _indexed,
     "indicator": _indicator,
+    "stoch_parametric": _stoch_parametric,
+    "stoch_empirical": _stoch_empirical,
 }
 
 

@@ -83,12 +83,13 @@ payload = encode(import_model(m))   # Pyomo model → a Quicopt model → bytes
 ## Layout
 
 ```
-quicopt/ir.py      a model as plain data: variables, expressions, constraints
-quicopt/wire.py    a model → the bytes the service reads (standard library only)
-quicopt/pyomo.py   a Pyomo model → a Quicopt model
-quicopt/mathopt.py an OR-Tools MathOpt model → a Quicopt model
-quicopt/pulp.py    a PuLP model → a Quicopt model
-quicopt/client.py  POST those bytes to the service, read the result (HTTP, stdlib)
+quicopt/ir.py         a model as plain data: variables, expressions, constraints
+quicopt/wire.py       a model → the bytes the service reads (standard library only)
+quicopt/pyomo.py      a Pyomo model → a Quicopt model
+quicopt/mathopt.py    an OR-Tools MathOpt model → a Quicopt model
+quicopt/pulp.py       a PuLP model → a Quicopt model
+quicopt/stochastic.py writing a Pyomo model whose data is not known yet
+quicopt/client.py     POST those bytes to the service, read the result (HTTP, stdlib)
 ```
 
 Between client and service, a model is a `Program`: variables, expressions and

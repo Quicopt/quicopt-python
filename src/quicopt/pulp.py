@@ -3,17 +3,15 @@
 """
 quicopt.pulp — a PuLP problem → a Quicopt ``Program``.
 
-A third importer (beside ``quicopt.pyomo`` and ``quicopt.mathopt``), for authors
-already holding a `PuLP <https://coin-or.github.io/pulp/>`_ model. There is no
-expression tree to walk: a PuLP ``LpAffineExpression`` *is* a mapping from variable
-to coefficient, so the objective ``offset + Σ cᵢxᵢ`` and each constraint
-``Σ cᵢxᵢ + k ⋈ 0`` are read off directly, with variable bounds and category into
-``VarDecl`` and the constraint rows into ``Zero``/``Nonneg``. An absent PuLP bound
-(``None``) means unbounded in that direction (±Inf).
+For a model you already have as a `PuLP <https://coin-or.github.io/pulp/>`_
+problem. The objective ``offset + Σ cᵢxᵢ`` and each constraint ``Σ cᵢxᵢ + k ⋈ 0``
+are carried across, with variable bounds and category into ``VarDecl`` and the
+constraint rows into ``Zero``/``Nonneg``. An absent PuLP bound (``None``) means
+unbounded in that direction (±Inf).
 
 PuLP is linear by construction, so what is supported is exactly LP / MILP: it has
 no quadratic expression type, hence no QUBO to import (unlike ``quicopt.mathopt``,
-which can express one). Everything a PuLP model can say, Quicopt can carry.
+which can express one).
 
 Requires the optional ``[pulp]`` extra (``pip install -e '.[pulp]'``).
 
@@ -42,11 +40,10 @@ Example:
     PuLP solver runs: ``prob.solve()`` is not called, and no solver need be
     installed.
 
-    The solution is keyed by the PuLP names. Inside the ``Program``, the row has
-    become ``5 − (x + 2·y) ≥ 0`` — an inequality has *one* sign convention there,
-    so ``≤`` is carried by negating — and that ``Program`` is byte-identical to
-    the one ``quicopt.mathopt`` builds from the same model written in MathOpt:
-    what a model *is* to Quicopt does not depend on who wrote it.
+    The solution is keyed by the PuLP names, and that ``Program`` is
+    byte-identical to the one ``quicopt.mathopt`` builds from the same model
+    written in MathOpt: what a model *is* to Quicopt does not depend on who
+    wrote it.
 """
 from __future__ import annotations
 

@@ -3,19 +3,10 @@
 """
 quicopt.wire — a ``Program`` → the bytes the service reads.
 
-A hand-written encoder of Quicopt's protobuf schema, using nothing but the standard
-library (the deliberate "no protoc" choice: the schema is small and frozen).
-Crucially the bytes are **identical** to what the service produces for the same
-model: the same fixed ordering of the order-free ``dict`` tables (so equal Programs
-encode to equal bytes), the same rule that a ``oneof`` case is always written (so
-``Const(0.0)`` survives), and the same rule that ``VarDecl.start`` and
-``ParamEntry.value`` are written even when ``0.0``, which protobuf would otherwise
-drop as a default. That exactness is what the encoder is judged on (see
-``tests/test_wire_golden.py``).
-
-Protobuf crib: a field is ``tag = (number<<3 | wiretype)`` then the payload;
-wiretype 0=varint, 1=fixed64 (doubles, little-endian), 2=length-delimited (strings,
-embedded messages, repeated). Embedded messages are length-delimited.
+Encoding is deterministic: the same model always produces the same bytes, and they
+are the bytes the service produces for that model too — checked against committed
+goldens in ``tests/test_wire_golden.py``. The encoder uses nothing outside the
+standard library, like the rest of the package.
 
 Example:
     ```python
@@ -51,13 +42,21 @@ from __future__ import annotations
 import struct
 from io import BytesIO
 
-from .ir import (Const, Param, Var, Apply, Reduce, SetRef,
-                 Zero, Nonneg, Indicator, VarDecl, IndexSet, Program)
+from .ir import (Const, Param, Var, Apply, Reduce, SetRef, SourceRef,
+                 Zero, Nonneg, Indicator, Parametric, Empirical,
+                 VarDecl, IndexSet, Program)
 
+# Hand-rolled rather than protoc-generated: the schema is small and frozen, and the
+# byte-exactness the golden test pins is easier to hold with the encoder in view.
+# The rules that exactness turns on are documented at the functions enforcing them.
 SCHEMA_VERSION = 1               # co-versions with the .proto package (…v1)
 
 
 # ── low-level writers ───────────────────────────────────────────────────────
+#
+# Protobuf crib: a field is `tag = (number<<3 | wiretype)` then the payload;
+# wiretype 0=varint, 1=fixed64 (doubles, little-endian), 2=length-delimited
+# (strings, embedded messages, repeated). Embedded messages are length-delimited.
 
 def _putvarint(io, x):
     """Write an integer as a base-128 varint (LEB128, proto wiretype 0).
@@ -337,15 +336,16 @@ def _enc_expr(io, e):
 
     The node's concrete type selects the active ``oneof`` case — ``Const``→1
     (double), ``Param``→2, ``Var``→3, ``Apply``→4 (op + args), ``Reduce``→5
-    (op, bound index, set, body, optional guard). The case is *always* emitted so
-    that ``Const(0.0)`` survives round-trip rather than collapsing to an empty
-    message.
+    (op, bound index, set, body, optional guard), ``SourceRef``→6 (name). The
+    case is *always* emitted so that ``Const(0.0)`` survives round-trip rather
+    than collapsing to an empty message.
 
     Args:
         io: The byte sink.
         e: An expression node (:class:`~quicopt.ir.Const` /
             :class:`~quicopt.ir.Param` / :class:`~quicopt.ir.Var` /
-            :class:`~quicopt.ir.Apply` / :class:`~quicopt.ir.Reduce`).
+            :class:`~quicopt.ir.Apply` / :class:`~quicopt.ir.Reduce` /
+            :class:`~quicopt.ir.SourceRef`).
 
     Returns:
         None. The fields are appended to ``io``.
@@ -374,6 +374,8 @@ def _enc_expr(io, e):
             if e.cond is not None:
                 _wmsg(b, 5, _expr_msg(e.cond))
         _wmsg(io, 5, _msg(build))
+    elif isinstance(e, SourceRef):
+        _wmsg(io, 6, _msg(lambda b: _wstr(b, 1, e.name)))
     else:
         raise TypeError(f"wire: not an Expression: {e!r}")
 
@@ -575,14 +577,48 @@ def _enc_param_table(io, name, tbl):
         _wmsg(io, 2, _msg(build))
 
 
+def _enc_source(io, name, s):
+    """Encode one named random variable into a ``SourceDecl`` message body.
+
+    Field 1 is the name it is referenced by; the ``oneof`` case that follows says
+    how it is drawn — ``Parametric``→2 (a distribution head plus its parameter
+    expressions) or ``Empirical``→3 (a scenario column). The column is *packed*:
+    one length-delimited field holding 8·R little-endian doubles, which is what a
+    protoc-generated encoder emits for a proto3 ``repeated double``.
+
+    Args:
+        io: The byte sink.
+        name: The name the source is declared and referenced under.
+        s: The declaration (:class:`~quicopt.ir.Parametric` /
+            :class:`~quicopt.ir.Empirical`).
+
+    Returns:
+        None. The fields are appended to ``io``.
+
+    Raises:
+        TypeError: If ``s`` is neither ``Parametric`` nor ``Empirical``.
+    """
+    _wstr(io, 1, name)
+    if isinstance(s, Parametric):
+        def build(b):
+            _wstr(b, 1, s.head)
+            for p in s.params:
+                _wmsg(b, 2, _expr_msg(p))
+        _wmsg(io, 2, _msg(build))
+    elif isinstance(s, Empirical):
+        column = b"".join(struct.pack("<d", float(x)) for x in s.data)
+        _wmsg(io, 3, _msg(lambda b: _wbytes(b, 1, column)))
+    else:
+        raise TypeError(f"wire: not a source declaration: {s!r}")
+
+
 def encode(prog: Program) -> bytes:
     """Encode a ``Program`` to the (v1) bytes the service reads.
 
-    The top-level message in schema order: index sets (1), indexed sets (2),
-    param tables (3), variable declarations (4), the objective expression (5), the
-    sense string (6), constraints (7), and the ``fix`` pins (8). The order-free
-    tables (``indexed_sets``, ``params``, ``fix``) are written in sorted-key order
-    so equal Programs encode to equal bytes — the property the golden test pins.
+    Two equal Programs always encode to equal bytes, whichever order their tables
+    happened to be built in. A model that declares no uncertainty encodes to exactly
+    the bytes it would have before the stochastic layer existed, so adding that
+    layer costs an ordinary model nothing.
 
     Args:
         prog: The :class:`~quicopt.ir.Program` to encode.
@@ -591,6 +627,11 @@ def encode(prog: Program) -> bytes:
         bytes: The message, deterministic and identical byte for byte to what the
         Quicopt service produces for the same model.
     """
+    # Fields in schema order (1–8 deterministic, 9–11 stochastic); the order-free
+    # tables are emitted sorted, which is what makes equal Programs equal bytes. The
+    # two scenario scalars are omitted at their default of 1, which is also why the
+    # default is 1 and not 0: protobuf cannot tell a zero from an absent field, so a
+    # 0 here would reach the service as "use your default".
     io = BytesIO()
     for s in prog.sets:
         _wmsg(io, 1, _msg(lambda b, s=s: _enc_index_set(b, s)))
@@ -611,6 +652,12 @@ def encode(prog: Program) -> bytes:
             _wmsg(b, 2, _idx_msg(idx))
             _wdouble(b, 3, prog.fix[key])
         _wmsg(io, 8, _msg(build))
+    if prog.scenarios != 1:
+        _wvarint(io, 9, prog.scenarios)
+    if prog.scenario_seed != 1:
+        _wvarint(io, 10, prog.scenario_seed)
+    for name in sorted(prog.sources.keys()):
+        _wmsg(io, 11, _msg(lambda b, name=name: _enc_source(b, name, prog.sources[name])))
     return io.getvalue()
 
 

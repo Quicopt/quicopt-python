@@ -3,8 +3,8 @@
 """
 quicopt.mathopt — an OR-Tools MathOpt model → a Quicopt ``Program``.
 
-A second importer (beside ``quicopt.pyomo``), for authors already holding an
-OR-Tools `MathOpt <https://developers.google.com/optimization/math_opt>`_ model.
+For a model you already have as an OR-Tools
+`MathOpt <https://developers.google.com/optimization/math_opt>`_ model.
 It walks a ``ModelProto`` — the objective ``offset + Σ cᵢxᵢ + Σ_{i≤j} qᵢⱼxᵢxⱼ``
 and each ``lbᵣ ≤ Σ A[r,j]xⱼ ≤ ubᵣ`` row — into Quicopt's expression graph, with
 variable bounds and integrality into ``VarDecl`` and each row into
@@ -13,8 +13,8 @@ direction"; a one-sided range drops its infinite side.
 
 What is supported is LP / MILP / (unconstrained binary-quadratic) QUBO — the kinds
 of model the service handles. A MathOpt construct outside that (quadratic /
-second-order-cone / SOS / indicator constraints, multiple objectives) **raises**:
-it is a gap to close in the service, never silently dropped here.
+second-order-cone / SOS / indicator constraints, multiple objectives) **raises**,
+rather than being approximated or dropped.
 
 Requires the optional ``[mathopt]`` extra (``pip install -e '.[mathopt]'``).
 
@@ -44,9 +44,7 @@ Example:
     it exports.
 
     The solution is keyed by the MathOpt names, so it reads back against the
-    model that was written. Inside the ``Program``, the row has become
-    ``5 − (x + 2·y) ≥ 0``: an inequality has *one* sign convention in a
-    ``Program``, so ``≤`` is carried by negating.
+    model that was written.
 """
 from __future__ import annotations
 
