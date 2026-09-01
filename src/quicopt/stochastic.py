@@ -42,7 +42,7 @@ Example:
     m.service = pyo.Constraint(expr=prob(m.demand - m.x <= 0) >= 0.9)
 
     result = Client().solve(m)
-    print(result.solution)                      # {'x1': 107.9…}
+    print(result.solution)                      # {'x1': 118.7…} — the service level binds
     ```
 
     Every mention of ``m.demand`` refers to the same sample. Two independent random
