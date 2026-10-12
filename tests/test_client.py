@@ -15,6 +15,8 @@ import json
 import os
 import tempfile
 import threading
+import urllib.request
+import warnings
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -153,10 +155,11 @@ def test_metadata_source_and_project():
     assert _source_language(_program()) is None
     assert _source_language(b"\x00") is None
 
-    # _meta_config merges auto source (unless overridden) + project
-    assert _meta_config(_program(), "proj-1", None) == {"project_id": "proj-1"}
-    assert _meta_config(fake("pyomo.environ"), None, None) == {"source_language": "pyomo"}
-    assert _meta_config(fake("pyomo.environ"), None, {"source_language": "x"})["source_language"] == "x"
+    # _meta_config merges auto source (unless overridden) + project + time limit
+    assert _meta_config(_program(), "proj-1", None, None) == {"project_id": "proj-1"}
+    assert _meta_config(fake("pyomo.environ"), None, None, None) == {"source_language": "pyomo"}
+    assert _meta_config(fake("pyomo.environ"), None, None, {"source_language": "x"})["source_language"] == "x"
+    assert _meta_config(_program(), None, 30.0, None) == {"time_limit": 30.0}
 
     # end-to-end: project rides the request query string (%-escaped), not the body
     prog = _program()
@@ -324,6 +327,76 @@ def test_result_polls_past_not_done():
         res = Job(client, _JOB).result(poll=0.01)
         assert res.objective == 4.0
         assert srv.gets == 1                             # one 409 not_done, then a 200
+
+
+def _raises(exc, fn, *args, **kwargs):
+    """Assert that ``fn(*args, **kwargs)`` raises ``exc``."""
+    try:
+        fn(*args, **kwargs)
+    except exc:
+        return
+    raise AssertionError(f"{fn.__name__} did not raise {exc.__name__}")
+
+
+def _timed_result(asked, granted):
+    """The stub's result for a solve the caller gave a time limit."""
+    return dict(_RESULT, solver_data=dict(_RESULT["solver_data"],
+                                          time_limit_s=asked, time_budget_s=granted))
+
+
+@contextlib.contextmanager
+def _socket_timeouts():
+    """Record the socket timeout of every request the client opens."""
+    seen, real = [], urllib.request.urlopen
+
+    def recording(req, timeout=None):
+        seen.append(timeout)
+        return real(req, timeout=timeout)
+    urllib.request.urlopen = recording
+    try:
+        yield seen
+    finally:
+        urllib.request.urlopen = real
+
+
+def test_time_limit_rides_the_query_and_widens_the_wait():
+    with _serve(result=_timed_result(90.0, 90.0)) as (client, srv), _socket_timeouts() as seen:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")                  # granted as asked: no warning
+            res = client.solve(_program(), time_limit=90)
+        assert "time_limit=90.0" in srv.last_path
+        assert res.solver_data["time_budget_s"] == 90.0
+        assert seen[-1] == 150.0                            # the time limit plus a minute
+        client.solve(_program())
+        assert "time_limit" not in srv.last_path
+        assert seen[-1] == 5.0                              # the client's own timeout
+
+
+def test_lowered_time_limit_warns():
+    with _serve(result=_timed_result(300.0, 120.0)) as (client, _srv):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            client.solve(_program(), time_limit=300)
+        assert len(caught) == 1
+        assert "120 s, not the 300 s asked for" in str(caught[0].message)
+
+
+def test_submitted_time_limit_reaches_the_job():
+    with _serve(result=_timed_result(300.0, 120.0)) as (client, srv):
+        job = client.submit(_program(), time_limit=300)
+        assert job.time_limit == 300.0 and "time_limit=300.0" in srv.last_path
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            job.result()
+        assert len(caught) == 1
+
+
+def test_time_limit_is_checked_before_sending():
+    client = Client("http://127.0.0.1:9", cache=False)
+    for bad in (0, -1.0, float("inf"), float("nan")):
+        _raises(ValueError, client.solve, _program(), time_limit=bad)
+    for bad in ("10", True):
+        _raises(TypeError, client.submit, _program(), time_limit=bad)
 
 
 def test_structures_count_from_zero():

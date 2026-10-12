@@ -70,6 +70,12 @@ Tag a call with `client.solve(m, project="my-project")` to attribute it to a
 project — handy when one key serves several projects. Which modeling library you
 wrote in (Pyomo/MathOpt/PuLP) is recorded automatically.
 
+The service decides how long a solve may run. `client.solve(m, time_limit=30)`
+sets it to 30 seconds instead: a solver that proves its answer sooner still stops
+sooner, and a search runs for all of it. The service grants at most its maximum
+(120 s on the free tier), and the client warns when a solve got less time than
+asked for.
+
 If you want the encoded model yourself — to inspect it, store it, or send it by
 another route — the importers and the encoder are public too:
 
@@ -135,7 +141,7 @@ extras, skips without them).
 - **sending (HTTP)** — `Client.solve` / `Client.submit` over `/v1/solve` and
   `/v1/jobs`: the encoded model up, result JSON (status / objective / solution /
   framed `display` / the arrangement of each permutation) back; API-key minting on
-  the first call, optional gzip. Standard library only.
+  the first call, optional gzip, an optional time limit. Standard library only.
 
 ## License
 
