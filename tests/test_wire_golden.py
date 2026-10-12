@@ -21,6 +21,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))                       # importable without an install
 
 from quicopt import (Const, Param, Var, Apply, Reduce, SetRef, SourceRef,   # noqa: E402
+                     StructRef, TableRef, PermutationDecl,
                      Zero, Nonneg, Indicator, Parametric, Empirical,
                      VarDecl, IndexSet, Constraint, Program,
                      CONTINUOUS, BINARY, encode)
@@ -115,6 +116,69 @@ def _stoch_empirical():                                     # both source kinds 
                  "price": Parametric("normal", [Param("μ"), Const(2.0)])})
 
 
+def _distances(coords):
+    """The dense distance table between points on a line, keyed from 1."""
+    n = len(coords)
+    return {(i + 1, j + 1): float(abs(coords[i] - coords[j])) for i in range(n) for j in range(n)}
+
+
+def _struct_tour():                                         # every StructureDecl field, 2-D lookup
+    # A lookup over item_at, a precedence and an explicit start. Like the two
+    # stochastic fixtures, transcribed verbatim from the service's own corpus.
+    tour = StructRef("tour")
+    leg = lambda k: TableRef("dist", [Apply("item_at", [Const(float(k)), tour]),
+                                      Apply("item_at", [Const(float(k + 1)), tour])])
+    return Program(
+        params={"dist": _distances([0, 3, 1, 4])},
+        vars=[VarDecl("x", [], CONTINUOUS, 0.0, 1.0, 0.0)],
+        objective=Apply("+", [leg(1), leg(2), leg(3), Var("x")]),
+        sense="min",
+        structures={"tour": PermutationDecl(4, start=[2, 1, 4, 3], precede=[(2, 1)])})
+
+
+def _struct_assignment():                                   # slot_of, no optional fields
+    # The same params table read two ways in one Program: through Param leaves and
+    # through a lookup at decided positions.
+    place = StructRef("place")
+    at = lambda f: Apply("slot_of", [Const(float(f)), place])
+    term = lambda f, g: Apply("*", [Param("flow", (f, g)), TableRef("dist", [at(f), at(g)])])
+    return Program(
+        params={"dist": _distances([0, 1, 3]),
+                "flow": {(1, 2): 2.0, (1, 3): 5.0, (2, 3): 1.0}},
+        vars=[VarDecl("y", [], CONTINUOUS, 0.0, 1.0, 0.0)],
+        objective=Apply("+", [term(1, 2), term(1, 3), term(2, 3), Var("y")]),
+        sense="min",
+        structures={"place": PermutationDecl(3)})
+
+
+def _struct_fixed():                                        # a pinned permutation, 1-D lookup
+    order = StructRef("order")
+    return Program(
+        params={"cost": {(1,): 1.5, (2,): 0.5, (3,): 2.0}},
+        vars=[VarDecl("z", [], CONTINUOUS, 0.0, 2.0, 1.0)],
+        objective=Apply("+", [TableRef("cost", [Apply("slot_of", [Const(1.0), order])]),
+                              Var("z")]),
+        sense="min",
+        constraints=[Constraint(Apply("-", [Var("z"), Apply("item_at", [Const(2.0), order])]),
+                                Nonneg(), [])],
+        fix={("z", ()): 1.0},
+        structures={"order": PermutationDecl(3, start=[3, 1, 2], fixed=True)})
+
+
+def _struct_stoch():                                        # a structure in a stochastic model
+    tour = StructRef("tour")
+    leg = TableRef("dist", [Apply("item_at", [Const(1.0), tour]),
+                            Apply("item_at", [Const(2.0), tour])])
+    return Program(
+        params={"dist": _distances([0, 2, 5])},
+        vars=[VarDecl("x", [], CONTINUOUS, 0.0, 1.0, 0.0)],
+        objective=Apply("+", [Apply("smean", [Apply("*", [leg, SourceRef("f")])]), Var("x")]),
+        sense="min",
+        scenarios=8, scenario_seed=3,
+        sources={"f": Parametric("normal", [Const(1.0), Const(0.1)])},
+        structures={"tour": PermutationDecl(3)})
+
+
 FIXTURES = {
     "scalar_nlp": _scalar_nlp,
     "bounds_zero_start": _bounds_zero_start,
@@ -122,6 +186,10 @@ FIXTURES = {
     "indicator": _indicator,
     "stoch_parametric": _stoch_parametric,
     "stoch_empirical": _stoch_empirical,
+    "struct_tour": _struct_tour,
+    "struct_assignment": _struct_assignment,
+    "struct_fixed": _struct_fixed,
+    "struct_stoch": _struct_stoch,
 }
 
 
