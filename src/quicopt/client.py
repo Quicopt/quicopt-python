@@ -69,15 +69,16 @@ import time
 import urllib.error
 import urllib.request
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from urllib.parse import quote, urlencode
 
 from .ir import Program
 from .wire import encode
 
-__all__ = ["Client", "Job", "Result", "QuicoptError", "DEFAULT_BASE_URL", "KEY_PATH_ENV"]
+__all__ = ["Client", "Job", "Result", "Arrangement", "QuicoptError", "DEFAULT_BASE_URL",
+           "KEY_PATH_ENV"]
 
 _OCTET = "application/octet-stream"
 
@@ -156,12 +157,24 @@ def _write_key(path: Path, key: str) -> None:
 
 
 @dataclass(frozen=True)
+class Arrangement:
+    """The arrangement the service found for one permutation (see
+    ``quicopt.structured``), both ways round and counted from 0: ``item_at[k]`` is
+    the item in slot ``k`` — for a route, the stops in the order visited — and
+    ``slot_of[i]`` the slot of item ``i``."""
+    item_at: List[int]
+    slot_of: List[int]
+
+
+@dataclass(frozen=True)
 class Result:
     """A finished solve, parsed from the service's result JSON. ``objective`` and
     ``feasible`` are ``None`` where the outcome leaves them undefined — a model
     with nothing to feasibility-check, or a run that found no solution.
     ``display`` is the framed, ready-to-print summary the service renders the same
-    way for every kind of model."""
+    way for every kind of model. ``structures`` holds the :class:`Arrangement` of
+    each permutation the model declares, by name, and is empty for a model with
+    none."""
     job_id: str
     status: str
     objective: Optional[float]
@@ -170,6 +183,7 @@ class Result:
     solve_time_seconds: float
     solver_data: Dict[str, Any]
     display: str
+    structures: Dict[str, Optional[Arrangement]] = field(default_factory=dict)
 
     @property
     def model_class(self) -> Optional[str]:
@@ -203,7 +217,28 @@ class Result:
             solve_time_seconds=d.get("solve_time_seconds", 0.0),
             solver_data=dict(d.get("solver_data") or {}),
             display=d.get("display", ""),
+            structures={name: _arrangement(s) for (name, s) in (d.get("structures") or {}).items()},
         )
+
+
+def _arrangement(s: Optional[Dict[str, Any]]) -> Optional[Arrangement]:
+    """Read one permutation's arrangement from the result JSON.
+
+    The service counts items and slots from 1; Python, and this client's
+    ``quicopt.structured``, from 0.
+
+    Args:
+        s: The JSON object with ``item_at`` and ``slot_of``, or ``None`` when no
+            solver returned an arrangement.
+
+    Returns:
+        The arrangement counted from 0, or ``None``.
+    """
+    if s is None:
+        return None
+    return Arrangement(item_at=[int(i) - 1 for i in s["item_at"]],
+                       slot_of=[int(k) - 1 for k in s["slot_of"]])
+
 
 
 class QuicoptError(Exception):

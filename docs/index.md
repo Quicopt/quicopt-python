@@ -70,6 +70,7 @@ See the **API reference** for each step:
 - [`wire`](api/wire.md) — `Program` → the bytes the service reads.
 - [`pyomo`](api/pyomo.md) — a Pyomo model → `Program`.
 - [`stochastic`](api/stochastic.md) — writing a model whose data is not known when the decision is made.
+- [`structured`](api/structured.md) — deciding an order, such as a route, and reading data at positions the service chooses.
 - [`mathopt`](api/mathopt.md) — an OR-Tools MathOpt model → `Program`.
 - [`pulp`](api/pulp.md) — a PuLP model → `Program`.
 - [`client`](api/client.md) — POST those bytes and read the result back.

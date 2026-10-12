@@ -89,6 +89,7 @@ quicopt/pyomo.py      a Pyomo model → a Quicopt model
 quicopt/mathopt.py    an OR-Tools MathOpt model → a Quicopt model
 quicopt/pulp.py       a PuLP model → a Quicopt model
 quicopt/stochastic.py writing a Pyomo model whose data is not known yet
+quicopt/structured.py deciding an order in a Pyomo model, and lookup tables
 quicopt/client.py     POST those bytes to the service, read the result (HTTP, stdlib)
 ```
 
@@ -128,10 +129,13 @@ extras, skips without them).
   `<=` / `==` / `>=` constraints, variable bounds (incl. unbounded) + integrality,
   `min` / `max`. PuLP is linear by construction, so this is exactly LP / MILP; a
   problem with no objective is a feasibility problem (a constant `0`).
+- **orders and lookup tables** (`structured`, Pyomo) — a permutation of items
+  over slots, read by `item_at` / `slot_of`, with precedences and a starting
+  arrangement; tables indexed by decisions. Counted from 0, like Python.
 - **sending (HTTP)** — `Client.solve` / `Client.submit` over `/v1/solve` and
   `/v1/jobs`: the encoded model up, result JSON (status / objective / solution /
-  framed `display`) back; API-key minting on the first call, optional gzip.
-  Standard library only.
+  framed `display` / the arrangement of each permutation) back; API-key minting on
+  the first call, optional gzip. Standard library only.
 
 ## License
 

@@ -18,8 +18,9 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-from quicopt import (Apply, Client, Const, Constraint, CONTINUOUS, DEFAULT_BASE_URL,
-                     Job, Nonneg, Program, QuicoptError, Var, VarDecl, encode)
+from quicopt import (Apply, Arrangement, Client, Const, Constraint, CONTINUOUS,
+                     DEFAULT_BASE_URL, Job, Nonneg, Program, QuicoptError, Var, VarDecl,
+                     encode)
 
 _KEY = "k" * 64
 _JOB = "job-1"
@@ -69,7 +70,7 @@ class _Stub(BaseHTTPRequestHandler):
         if srv.mode == "error":
             self._json(422, _ERROR, minted)
         elif self.path.startswith("/v1/solve"):
-            self._json(200, _RESULT, minted)
+            self._json(200, srv.result, minted)
         elif self.path.startswith("/v1/jobs"):
             self._json(202, {"job_id": _JOB, "status": "queued"}, minted)
         else:
@@ -82,7 +83,7 @@ class _Stub(BaseHTTPRequestHandler):
                 srv.gets += 1
                 self._json(409, {"reason": "not_done", "error": "job not done"})
             else:
-                self._json(200, _RESULT)
+                self._json(200, srv.result)
         elif "/jobs/" in self.path:
             self._json(200, {"job_id": _JOB, "status": "done"})
         else:
@@ -90,7 +91,7 @@ class _Stub(BaseHTTPRequestHandler):
 
 
 @contextlib.contextmanager
-def _serve(mode="ok", not_done_first=False, stale_key=None):
+def _serve(mode="ok", not_done_first=False, stale_key=None, result=None):
     """Run the stub and yield a client bound to it, plus the server for assertions.
 
     The client's key cache is redirected into a fresh temp directory: the suite must
@@ -100,6 +101,7 @@ def _serve(mode="ok", not_done_first=False, stale_key=None):
     srv = HTTPServer(("127.0.0.1", 0), _Stub)
     srv.mode, srv.not_done_first, srv.gets = mode, not_done_first, 0
     srv.stale_key, srv.mints = stale_key, 0
+    srv.result = _RESULT if result is None else result
     srv.last_body = srv.last_auth = srv.last_encoding = srv.last_path = None
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
@@ -322,6 +324,18 @@ def test_result_polls_past_not_done():
         res = Job(client, _JOB).result(poll=0.01)
         assert res.objective == 4.0
         assert srv.gets == 1                             # one 409 not_done, then a 200
+
+
+def test_structures_count_from_zero():
+    result = dict(_RESULT, structures={"route": {"item_at": [4, 2, 5, 3, 1],
+                                                 "slot_of": [5, 2, 4, 1, 3]},
+                                       "lost": None})
+    with _serve(result=result) as (client, _srv):
+        res = client.solve(_program())
+    assert res.structures["route"] == Arrangement(item_at=[3, 1, 4, 2, 0], slot_of=[4, 1, 3, 0, 2])
+    assert res.structures["lost"] is None
+    with _serve() as (client, _srv):
+        assert client.solve(_program()).structures == {}
 
 
 if __name__ == "__main__":
