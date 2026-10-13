@@ -20,6 +20,9 @@ Two rules describe the whole surface:
 [`set_scenarios`][quicopt.stochastic.set_scenarios] sets how many scenarios are drawn
 and from which seed. Both belong to the model, so repeated solves see the same sample.
 
+Random variables are declared on a Pyomo model. PuLP and OR-Tools MathOpt models hold
+only linear and quadratic terms, which cannot express an expectation or a probability.
+
 Example:
     Order ``x`` units at 3 apiece against demand you will only learn later, pay
     10 per unit of mismatch, and meet demand in at least 90% of scenarios:
@@ -57,7 +60,9 @@ Example:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from numbers import Real
 
+from pyomo.core import Model, PyomoObject
 from pyomo.core.expr import numeric_expr as _ne
 from pyomo.core.expr.relational_expr import InequalityExpression
 
@@ -151,12 +156,42 @@ def _declare(model):
     Returns:
         _Stochastic: The record, defaulting to one scenario drawn from seed 1 —
         the degenerate instance, which is what "no uncertainty" means.
+
+    Raises:
+        TypeError: If ``model`` is not a Pyomo model.
     """
+    _check_model(model)
     record = _declarations(model)
     if record is None:
         record = _Stochastic({}, 1, 1)
         setattr(model, _SLOT, record)
     return record
+
+
+def _check_model(model):
+    """Refuse a declaration on anything but a whole Pyomo model.
+
+    Args:
+        model: What the declaration is about to be recorded on.
+
+    Raises:
+        TypeError: If ``model`` is a block or another part of a Pyomo model, or
+            not a Pyomo object at all (a PuLP or MathOpt model, say).
+    """
+    # The importer reads declarations off the model it is handed and nowhere else,
+    # so a random variable recorded on a block of that model would silently import
+    # as a decision variable.
+    if isinstance(model, Model):
+        return
+    if isinstance(model, PyomoObject):
+        raise TypeError("random variables and scenarios are declared on the Pyomo model itself, "
+                        f"the one you solve, not on {type(model).__name__} "
+                        f"'{getattr(model, 'name', model)}' inside it. A variable inside a block "
+                        "is declared on the model too: set_distribution(m, m.block.v, ...)")
+    raise TypeError("random variables and scenarios are declared on a Pyomo model, such as a "
+                    f"pyo.ConcreteModel, not on {type(model).__module__}.{type(model).__name__}: "
+                    "PuLP and OR-Tools MathOpt models hold only linear and quadratic terms, "
+                    "which cannot express an expectation or a probability")
 
 
 def set_distribution(model, v, dist, name=None):
@@ -174,8 +209,10 @@ def set_distribution(model, v, dist, name=None):
     it takes, and a variable carrying both is rejected on import.
 
     Raises:
-        TypeError: If ``v`` is not a Pyomo variable, or ``dist`` is neither a
-            ``Distribution`` nor an ``Empirical`` column.
+        TypeError: If ``v`` is not a Pyomo variable, ``dist`` is neither a
+            ``Distribution`` nor an ``Empirical`` column, or ``model`` is not a
+            Pyomo model (a PuLP or MathOpt model, or a block inside a Pyomo model,
+            is refused).
         ValueError: If ``name`` is already taken by a different random variable.
     """
     if not (hasattr(v, "is_variable_type") and v.is_variable_type()):
@@ -207,6 +244,8 @@ def set_scenarios(model, n, seed=None):
     one.
 
     Raises:
+        TypeError: If ``model`` is not a Pyomo model (a PuLP or MathOpt model, or
+            a block inside a Pyomo model, is refused).
         ValueError: If ``n`` or ``seed`` is below 1.
     """
     # 0 is rejected rather than defaulted: protobuf cannot tell a zero from an absent
@@ -300,8 +339,11 @@ def expectation(x):
 
     ``x`` is any expression containing a random variable. The result is
     deterministic, and can be used anywhere a number can.
+
+    Raises:
+        TypeError: If ``x`` is neither a Pyomo expression nor a number.
     """
-    return _Aggregate("smean", [x])
+    return _Aggregate("smean", [_operand("expectation", x)])
 
 
 def cvar(x, alpha):
@@ -316,9 +358,11 @@ def cvar(x, alpha):
     level, a plain number strictly between 0 and 1; it cannot depend on a decision.
 
     Raises:
-        TypeError: If ``alpha`` is not a plain number.
+        TypeError: If ``x`` is neither a Pyomo expression nor a number, or
+            ``alpha`` is not a plain number.
         ValueError: If ``alpha`` does not lie strictly between 0 and 1.
     """
+    _operand("cvar", x)
     if not _is_number(alpha):
         raise TypeError(f"the tail level must be a plain number, got {type(alpha).__name__}")
     if not 0.0 < alpha < 1.0:
@@ -372,9 +416,10 @@ def maximum(*args):
     not known yet.
 
     Raises:
+        TypeError: If an argument is neither a Pyomo expression nor a number.
         ValueError: If given fewer than two arguments.
     """
-    return _ne.MaxExpression(_at_least_two("maximum", args))
+    return _ne.MaxExpression([_operand("maximum", a) for a in _at_least_two("maximum", args)])
 
 
 def minimum(*args):
@@ -384,9 +429,10 @@ def minimum(*args):
     actually sell.
 
     Raises:
+        TypeError: If an argument is neither a Pyomo expression nor a number.
         ValueError: If given fewer than two arguments.
     """
-    return _ne.MinExpression(_at_least_two("minimum", args))
+    return _ne.MinExpression([_operand("minimum", a) for a in _at_least_two("minimum", args)])
 
 
 def _at_least_two(fname, args):
@@ -405,6 +451,25 @@ def _at_least_two(fname, args):
     if len(args) < 2:
         raise ValueError(f"{fname} compares at least two quantities, got {len(args)}")
     return list(args)
+
+
+def _operand(fname, x):
+    """Check that ``x`` can sit inside a Pyomo expression node.
+
+    Args:
+        fname: The calling function's name, for the message.
+        x: The argument given.
+
+    Returns:
+        The argument, unchanged.
+
+    Raises:
+        TypeError: If ``x`` is neither a Pyomo object nor a real number — an
+            expression of a PuLP or MathOpt model, say.
+    """
+    if isinstance(x, (Real, PyomoObject)):
+        return x
+    raise TypeError(f"{fname} works on Pyomo expressions and numbers, got {type(x).__name__}")
 
 
 def _is_number(x):
