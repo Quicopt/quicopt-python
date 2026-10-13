@@ -76,6 +76,45 @@ sooner, and a search runs for all of it. The service grants at most its maximum
 (120 s on the free tier), and the client warns when a solve got less time than
 asked for.
 
+### Orders, groups, minimum loads and fees
+
+`quicopt.structured` adds decisions that Pyomo has no word for: an order (a
+route, a schedule), a split of items into groups (people into teams), and a
+variable that is either 0 or within its bounds (a delivery of none, or of 10 to
+25 units). `active(x)` is 1 when such a variable is not 0, which turns a fixed
+fee per delivery into one term, and Pyomo's own `Expr_if` over a comparison
+charges a fee once a total passes a threshold. A `block` names the variables of
+one subproblem, such as one customer's deliveries; every solution returned
+satisfies the constraints over one block's variables alone.
+
+```python
+import pyomo.environ as pyo
+from quicopt import Client
+from quicopt.structured import semiinteger, active, block
+
+demand = [40, 30, 20]                         # units, customers 0 to 2
+price = [[1, 3, 4], [3, 1, 3], [4, 2, 1]]     # per unit, price[warehouse][customer]
+opening = [60, 50, 40]                        # fee of warehouses 0 to 2
+
+m = pyo.ConcreteModel()
+m.ship = pyo.Var(range(3), range(3), within=pyo.NonNegativeIntegers, bounds=(10, 25))
+semiinteger(m.ship)                           # every delivery: none, or 10 to 25 units
+for c in range(3):
+    block(m, f"customer_{c}", [m.ship[w, c] for w in range(3)])
+m.served = pyo.Constraint(range(3), rule=lambda m, c:
+                          sum(m.ship[w, c] for w in range(3)) >= demand[c])
+m.cost = pyo.Objective(expr=
+    sum(price[w][c] * m.ship[w, c] for w in range(3) for c in range(3))
+    + sum(5 * active(m.ship[w, c]) for w in range(3) for c in range(3))      # 5 per delivery
+    + sum(pyo.Expr_if(IF=sum(m.ship[w, c] for c in range(3)) >= 1,           # opening fee
+                      THEN=opening[w], ELSE=0) for w in range(3)))
+
+print(Client().solve(m).objective)            # 300.0: warehouse 1 stays closed
+```
+
+The [API reference](https://quicopt.github.io/quicopt-python/api/structured/)
+walks through this example, a team split and a route.
+
 If you want the encoded model yourself — to inspect it, store it, or send it by
 another route — the importers and the encoder are public too:
 
@@ -95,7 +134,7 @@ quicopt/pyomo.py      a Pyomo model → a Quicopt model
 quicopt/mathopt.py    an OR-Tools MathOpt model → a Quicopt model
 quicopt/pulp.py       a PuLP model → a Quicopt model
 quicopt/stochastic.py writing a Pyomo model whose data is not known yet
-quicopt/structured.py deciding an order in a Pyomo model, and lookup tables
+quicopt/structured.py orders, groups, minimum loads, fees and blocks in a Pyomo model
 quicopt/client.py     POST those bytes to the service, read the result (HTTP, stdlib)
 ```
 
@@ -135,12 +174,17 @@ extras, skips without them).
   `<=` / `==` / `>=` constraints, variable bounds (incl. unbounded) + integrality,
   `min` / `max`. PuLP is linear by construction, so this is exactly LP / MILP; a
   problem with no objective is a feasibility problem (a constant `0`).
-- **orders and lookup tables** (`structured`, Pyomo) — a permutation of items
-  over slots, read by `item_at` / `slot_of`, with precedences and a starting
-  arrangement; tables indexed by decisions. Counted from 0, like Python.
+- **orders, groups and lookup tables** (`structured`, Pyomo) — a permutation of
+  items over slots, read by `item_at` / `slot_of`, with precedences and a
+  starting arrangement; a partition of items into parts, read by `part_of` /
+  `size_of`; tables indexed by decisions. Counted from 0, like Python.
+- **minimum loads, fees and blocks** (`structured`, Pyomo) — variables that are
+  0 or within their bounds (`semicontinuous` / `semiinteger`), `active`, fees
+  through Pyomo's `Expr_if` over `<=` / `<` / `>=` / `>` / `==`, and named
+  blocks of variables.
 - **sending (HTTP)** — `Client.solve` / `Client.submit` over `/v1/solve` and
   `/v1/jobs`: the encoded model up, result JSON (status / objective / solution /
-  framed `display` / the arrangement of each permutation) back; API-key minting on
+  framed `display` / the arrangement of each permutation and the grouping of each partition) back; API-key minting on
   the first call, optional gzip, an optional time limit. Standard library only.
 
 ## License

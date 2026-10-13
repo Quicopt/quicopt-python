@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: (c) 2026 Tim Bode, PGI-12, Forschungszentrum Jülich
 """
-quicopt.structured — decisions that are an arrangement, written in Pyomo.
+quicopt.structured — orders, groups, minimum loads and fees, written in Pyomo.
 
 Some decisions are an order: the order in which a courier visits its stops, the
 order of jobs on a machine, which department moves into which office. Each is a
@@ -52,16 +52,110 @@ Example:
     result has the status ``heuristic``. Permutations combine with random
     variables (``quicopt.stochastic``), for example a route whose travel times are
     uncertain, minimized in expectation.
+
+Minimum loads, fees and blocks:
+    A delivery is often either nothing or at least a minimum load: a truck does
+    not go out for two units. [`semiinteger`][quicopt.structured.semiinteger]
+    marks an integer variable so that it is 0 or a whole number within its
+    bounds, and nothing in between;
+    [`semicontinuous`][quicopt.structured.semicontinuous] does the same for a
+    continuous one. [`active`][quicopt.structured.active] is 1 when such a
+    variable is not 0, so ``5 * active(m.ship[w, c])`` charges 5 for every
+    delivery made.
+
+    A fee that depends on a total, such as a warehouse's opening fee due as soon
+    as it delivers anything, is Pyomo's own ``Expr_if`` over a comparison:
+    ``pyo.Expr_if(IF=total >= 1, THEN=60, ELSE=0)``. Any of ``<=``, ``<``,
+    ``>=``, ``>`` and ``==`` works; [`minimum`][quicopt.structured.minimum] and
+    [`maximum`][quicopt.structured.maximum] cap or floor an expression in the
+    same spirit.
+
+    A [`block`][quicopt.structured.block] names the variables of one subproblem,
+    such as one customer's deliveries. Every solution the service returns
+    satisfies the constraints that involve only one block's variables, such as
+    that customer's demand.
+
+    Three warehouses supply three customers. Each delivery is none or 10 to 25
+    units and costs 5 plus a price per unit; a warehouse that delivers anything
+    pays its opening fee:
+
+    ```python
+    import pyomo.environ as pyo
+    from quicopt import Client
+    from quicopt.structured import semiinteger, active, block
+
+    demand = [40, 30, 20]                         # units, customers 0 to 2
+    price = [[1, 3, 4], [3, 1, 3], [4, 2, 1]]     # per unit, price[warehouse][customer]
+    opening = [60, 50, 40]                        # fee of warehouses 0 to 2
+
+    m = pyo.ConcreteModel()
+    m.ship = pyo.Var(range(3), range(3), within=pyo.NonNegativeIntegers, bounds=(10, 25))
+    semiinteger(m.ship)                           # every delivery: none, or 10 to 25 units
+    for c in range(3):
+        block(m, f"customer_{c}", [m.ship[w, c] for w in range(3)])
+    m.served = pyo.Constraint(range(3), rule=lambda m, c:
+                              sum(m.ship[w, c] for w in range(3)) >= demand[c])
+    m.cost = pyo.Objective(expr=
+        sum(price[w][c] * m.ship[w, c] for w in range(3) for c in range(3))
+        + sum(5 * active(m.ship[w, c]) for w in range(3) for c in range(3))
+        + sum(pyo.Expr_if(IF=sum(m.ship[w, c] for c in range(3)) >= 1,
+                          THEN=opening[w], ELSE=0) for w in range(3)))
+
+    result = Client().solve(m)
+    print(result.objective)                       # 300.0
+    # the deliveries ship[0, 0], ship[0, 1], …, ship[2, 2] are x1 to x9 in the solution
+    print([result.solution[f"x{k}"] for k in range(1, 10)])
+    # [25.0, 10.0, 0.0, 0.0, 0.0, 0.0, 15.0, 20.0, 20.0]
+    ```
+
+    Warehouse 1 stays closed. Warehouse 0 sends its full 25 units to customer 0
+    and the minimum of 10 to customer 1; warehouse 2 covers the rest. Without
+    the minimum load, the cheapest plan would cost 295 and send customer 1 a
+    delivery of only 5 units from warehouse 0.
+
+Splitting items into groups:
+    [`partition`][quicopt.structured.partition] declares a split of items into
+    parts as a decision: people into teams, jobs onto machines. Its
+    [`part_of`][quicopt.structured.Partition.part_of] is the part an item is in
+    and its [`size_of`][quicopt.structured.Partition.size_of] how many items a
+    part holds. Items and parts count from 0.
+
+    Six players of strengths 7, 5, 4, 3, 2 and 1 form a team of four and a team
+    of two, as evenly matched as possible:
+
+    ```python
+    import pyomo.environ as pyo
+    from quicopt import Client
+    from quicopt.structured import partition, maximum
+
+    strength = [7, 5, 4, 3, 2, 1]                 # of players 0 to 5
+    m = pyo.ConcreteModel()
+    teams = partition(m, "teams", 6, 2)           # 6 players into teams 0 and 1
+    total = [sum(pyo.Expr_if(IF=teams.part_of(p) == t, THEN=strength[p], ELSE=0)
+                 for p in range(6)) for t in range(2)]
+    m.four = pyo.Constraint(expr=teams.size_of(0) == 4)
+    m.stronger = pyo.Objective(expr=maximum(total[0], total[1]))
+
+    result = Client().solve(m)
+    print(result.objective)                       # 11.0
+    print(result.structures["teams"].part_of)     # [1, 0, 1, 0, 0, 0]
+    ```
+
+    Players 0 and 2 (7 + 4) make up the team of two, and the other four also add
+    up to 11.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from numbers import Integral, Real
 
-from pyomo.core import Model, PyomoObject
+from pyomo.core import Model, PyomoObject, Var
 from pyomo.core.expr import numeric_expr as _ne
 
-__all__ = ["permutation", "Permutation", "lookup_table", "LookupTable"]
+from .stochastic import maximum, minimum
+
+__all__ = ["permutation", "Permutation", "partition", "Partition", "lookup_table", "LookupTable",
+           "semicontinuous", "semiinteger", "active", "block", "minimum", "maximum"]
 
 
 # ── what a model has declared ───────────────────────────────────────────────
@@ -82,19 +176,42 @@ class _PermutationRecord:
 
 
 @dataclass
+class _PartitionRecord:
+    """One declared partition, counted from 0 as the user wrote it.
+
+    Attributes:
+        n: How many items.
+        parts: How many parts.
+        start: The starting part of each item, or empty for the service's default.
+    """
+    n: int
+    parts: int
+    start: list
+
+
+@dataclass
 class _Structured:
-    """The permutations and lookup tables declared on a model, by name.
+    """What a model has declared through this module.
 
     Held on the model itself, under a private attribute, and read by
-    ``quicopt.pyomo.import_model`` on the way out.
+    ``quicopt.pyomo.import_model`` on the way out. Pyomo ``VarData`` objects are
+    unhashable, so the variable registries key on ``id`` and keep the variable
+    beside it, which also keeps that id valid.
 
     Attributes:
         permutations: ``name → _PermutationRecord``.
+        partitions: ``name → _PartitionRecord``.
         tables: ``name → values``, a list of numbers (one dimension) or a list of
             equally long lists of numbers (two dimensions).
+        holes: ``id(vardata) → vardata``, the variables that are 0 or within
+            their bounds.
+        blocks: ``name → [vardata, …]``, in the order given.
     """
     permutations: dict = field(default_factory=dict)
+    partitions: dict = field(default_factory=dict)
     tables: dict = field(default_factory=dict)
+    holes: dict = field(default_factory=dict)
+    blocks: dict = field(default_factory=dict)
 
 
 _SLOT = "_quicopt_structured"
@@ -113,9 +230,29 @@ def _declarations(model):
     return getattr(model, _SLOT, None)
 
 
+def _record(model):
+    """Read a model's structured declarations, creating the record on first use.
+
+    Args:
+        model: A Pyomo model.
+
+    Returns:
+        _Structured: The record.
+
+    Raises:
+        TypeError: If ``model`` is not a whole Pyomo model.
+    """
+    _check_model(model)
+    record = _declarations(model)
+    if record is None:
+        record = _Structured()
+        setattr(model, _SLOT, record)
+    return record
+
+
 def _declare(model, name):
     """Read a model's structured declarations, creating the record on first use,
-    and check that ``name`` is free.
+    and check that ``name`` is free among its permutations, partitions and tables.
 
     Args:
         model: A Pyomo model.
@@ -128,16 +265,21 @@ def _declare(model, name):
         TypeError: If ``model`` is not a Pyomo model, or ``name`` is not a string.
         ValueError: If ``name`` is empty or already declared.
     """
-    _check_model(model)
-    if not isinstance(name, str) or not name:
-        raise TypeError(f"a name is a non-empty string, got {name!r}")
-    record = _declarations(model)
-    if record is None:
-        record = _Structured()
-        setattr(model, _SLOT, record)
-    if name in record.permutations or name in record.tables:
+    record = _record(model)
+    _check_name(name)
+    if name in record.permutations or name in record.partitions or name in record.tables:
         raise ValueError(f"the name '{name}' is already declared on this model")
     return record
+
+
+def _check_name(name):
+    """Check that ``name`` is a non-empty string.
+
+    Raises:
+        TypeError: If it is not.
+    """
+    if not isinstance(name, str) or not name:
+        raise TypeError(f"a name is a non-empty string, got {name!r}")
 
 
 def _check_model(model):
@@ -155,13 +297,13 @@ def _check_model(model):
     if isinstance(model, Model):
         return
     if isinstance(model, PyomoObject):
-        raise TypeError("permutations and lookup tables are declared on the Pyomo model itself, "
-                        f"the one you solve, not on {type(model).__name__} "
-                        f"'{getattr(model, 'name', model)}' inside it")
-    raise TypeError("permutations and lookup tables are declared on a Pyomo model, such as a "
-                    f"pyo.ConcreteModel, not on {type(model).__module__}.{type(model).__name__}: "
-                    "PuLP and OR-Tools MathOpt models hold only linear and quadratic terms, which "
-                    "cannot express an order or an entry read at a position the service chooses")
+        raise TypeError("permutations, partitions, lookup tables and blocks are declared on the "
+                        "Pyomo model itself, the one you solve, not on "
+                        f"{type(model).__name__} '{getattr(model, 'name', model)}' inside it")
+    raise TypeError("permutations, partitions, lookup tables and blocks are declared on a Pyomo "
+                    "model, such as a pyo.ConcreteModel, not on "
+                    f"{type(model).__module__}.{type(model).__name__}: PuLP and OR-Tools MathOpt "
+                    "models hold only linear and quadratic terms, which cannot express them")
 
 
 # ── expression nodes the service evaluates ──────────────────────────────────
@@ -204,10 +346,12 @@ class _Decided(_ne.NumericExpression):
 
 
 class _Part(_Decided):
-    """The item in a slot, or the slot of an item, of a declared permutation.
+    """One part of a declared structure: the item in a slot or the slot of an
+    item of a permutation, the part of an item or the size of a part of a
+    partition.
 
     Has no children: the position it reads (``position``, counted from 0) is
-    data, and the permutation is named, so neither is a Pyomo expression.
+    data, and the structure is named, so neither is a Pyomo expression.
     """
 
     __slots__ = ("_head", "_structure", "_position")
@@ -216,10 +360,9 @@ class _Part(_Decided):
         """Build the node.
 
         Args:
-            head: ``"item_at"`` or ``"slot_of"``.
-            structure: The permutation's name.
-            position: The slot (for ``item_at``) or item (for ``slot_of``) read,
-                counted from 0.
+            head: ``"item_at"``, ``"slot_of"``, ``"part_of"`` or ``"size_of"``.
+            structure: The structure's name.
+            position: The slot, item or part read, counted from 0.
             args: Unused; present so Pyomo can rebuild the node.
         """
         super().__init__(args)
@@ -289,6 +432,33 @@ class _Lookup(_Decided):
     def _to_string(self, values, verbose, smap):
         """Render as indexing, e.g. ``dist[route.item_at(0), route.item_at(1)]``."""
         return f"{self._table}[{', '.join(values)}]"
+
+
+class _Active(_Decided):
+    """1 when its one child, a variable, is not 0, else 0: the variable's
+    indicator, ``indicator`` in the service's catalog."""
+
+    __slots__ = ()
+
+    def getname(self, *args, **kwargs):
+        """``indicator``, the catalog operator this node is imported as."""
+        return "indicator"
+
+    def create_node_with_local_data(self, args, classtype=None):
+        """Rebuild this node around new children.
+
+        Args:
+            args: The new child (the variable).
+            classtype: A class to build instead, when a walker asks for one.
+
+        Returns:
+            The rebuilt node.
+        """
+        return _Active(args) if classtype is None else classtype(args)
+
+    def _to_string(self, values, verbose, smap):
+        """Render as a call, e.g. ``active(ship[1,2])``."""
+        return f"active({values[0]})"
 
 
 # ── permutations ────────────────────────────────────────────────────────────
@@ -428,6 +598,123 @@ def permutation(model, name, n, start=None):
     perm = _PermutationRecord(n, [int(s) for s in start])
     record.permutations[name] = perm
     return Permutation(name, perm)
+
+
+# ── partitions ──────────────────────────────────────────────────────────────
+
+class Partition:
+    """A partition declared by :func:`partition`: ``n`` items in ``parts`` parts,
+    both counted from 0."""
+
+    def __init__(self, name, record):
+        """Wrap the declaration ``record`` of the partition ``name``; use
+        :func:`partition` to declare one."""
+        self._name = name
+        self._record = record
+
+    @property
+    def name(self):
+        """The name the partition was declared under."""
+        return self._name
+
+    @property
+    def n(self):
+        """How many items."""
+        return self._record.n
+
+    @property
+    def parts(self):
+        """How many parts."""
+        return self._record.parts
+
+    def part_of(self, item):
+        """The part item ``item`` is in, an expression whose value the service
+        chooses, from 0 to ``parts - 1``.
+
+        For people split into teams, ``teams.part_of(2)`` is the team of person 2.
+        Index a :class:`LookupTable` with it to read data about that part.
+
+        Raises:
+            TypeError: If ``item`` is not a whole number.
+            ValueError: If ``item`` is outside ``0..n - 1``.
+        """
+        return _Part("part_of", self._name, _position(self, item, self.n, "item", "part_of"))
+
+    def size_of(self, part):
+        """How many items part ``part`` holds, an expression whose value the
+        service chooses, from 0 to ``n``.
+
+        Raises:
+            TypeError: If ``part`` is not a whole number.
+            ValueError: If ``part`` is outside ``0..parts - 1``.
+        """
+        return _Part("size_of", self._name, _position(self, part, self.parts, "part", "size_of"))
+
+    def __repr__(self):
+        """A short description: name, items and parts."""
+        return f"<partition '{self._name}': {self.n} items in {self.parts} parts>"
+
+
+def _position(structure, k, extent, what, caller):
+    """Check a position read from a structure.
+
+    Args:
+        structure: The structure, for the message.
+        k: The number given.
+        extent: How many positions there are.
+        what: ``"item"`` or ``"part"``, for the message.
+        caller: The method's name, for the message.
+
+    Returns:
+        int: ``k``.
+
+    Raises:
+        TypeError: If ``k`` is not a whole number.
+        ValueError: If ``k`` is outside ``0..extent - 1``.
+    """
+    if not _is_whole(k):
+        raise TypeError(f"{caller}: a {what} is a whole number, got {k!r}")
+    if not 0 <= k < extent:
+        raise ValueError(f"{caller}: '{structure.name}' has {what}s 0 to {extent - 1}, got {k}")
+    return int(k)
+
+
+def partition(model, name, n, parts, start=None):
+    """Declare a split of ``n`` items into ``parts`` parts as a decision, on the
+    Pyomo model ``model``: every item goes into exactly one part, and a part may
+    stay empty.
+
+    People into teams, jobs onto machines, products into warehouses: in each, the
+    model reads the part an item is in through :meth:`Partition.part_of` and how
+    many items a part holds through :meth:`Partition.size_of`. Items and parts
+    count from 0.
+
+    ``name`` identifies the partition in the result, as
+    ``result.structures[name]``, a :class:`~quicopt.client.Grouping`. ``n`` is at
+    least 1 and ``parts`` at least 2. ``start`` is the split the service's search
+    starts from: ``start[i]`` is the part of item ``i``. Left out, the service
+    deals the items out over the parts in turn.
+
+    Raises:
+        TypeError: If ``model`` is not a Pyomo model, ``name`` is not a string, or
+            ``n`` or ``parts`` is not a whole number.
+        ValueError: If ``n`` is below 1 or ``parts`` below 2, ``name`` is already
+            declared on the model, or ``start`` does not give each item a part.
+    """
+    for (what, k, least) in (("items", n, 1), ("parts", parts, 2)):
+        if not _is_whole(k):
+            raise TypeError(f"a partition has a whole number of {what}, got {k!r}")
+        if k < least:
+            raise ValueError(f"a partition has at least {least} {what[:-1] if least == 1 else what}, got {k}")
+    n, parts = int(n), int(parts)
+    start = [] if start is None else list(start)
+    if start and not (len(start) == n and all(_is_whole(b) and 0 <= b < parts for b in start)):
+        raise ValueError(f"'{name}': start gives each of the {n} items a part from 0 to "
+                         f"{parts - 1} (start[i] is the part item i starts in)")
+    record = _declare(model, name)
+    decl = _PartitionRecord(n, parts, [int(b) for b in start])
+    record.partitions[name] = decl
+    return Partition(name, decl)
 
 
 def _has_cycle(edges, n):
@@ -623,3 +910,146 @@ def _is_whole(x):
         bool: True for an ``int`` (or NumPy integer) other than a bool.
     """
     return isinstance(x, Integral) and not isinstance(x, bool)
+
+
+# ── variables that are 0 or within their bounds; "in use"; blocks ───────────
+
+def semicontinuous(var):
+    """Let a continuous Pyomo variable be 0 as well as any value within its bounds,
+    and nothing in between: a delivery of nothing, or of at least a minimum load.
+
+    ``var`` is a variable (``m.x``) or an indexed one (``m.ship``, every element).
+    Its bounds are the range it takes when it is not 0; both must be finite, and
+    when 0 already lies within them nothing changes. Use :func:`semiinteger` for an
+    integer variable, and :func:`active` to charge a fee whenever the variable is
+    not 0.
+
+    Raises:
+        TypeError: If ``var`` is not a Pyomo variable, or is integer.
+    """
+    _mark_holes(var, integer=False, caller="semicontinuous")
+
+
+def semiinteger(var):
+    """Let an integer Pyomo variable be 0 as well as any whole number within its
+    bounds, and nothing in between: a batch of none, or of 10 to 25 units.
+
+    ``var`` is a variable (``m.x``) or an indexed one (``m.ship``, every element),
+    declared with ``within=pyo.Integers`` (or ``NonNegativeIntegers``, …). Its
+    bounds are the range it takes when it is not 0; both must be finite. See
+    :func:`semicontinuous` for a continuous variable.
+
+    Raises:
+        TypeError: If ``var`` is not a Pyomo variable, or is not integer, or is
+            binary.
+    """
+    _mark_holes(var, integer=True, caller="semiinteger")
+
+
+def _mark_holes(var, integer, caller):
+    """Record every variable in ``var`` as 0 or within its bounds, on its model.
+
+    Args:
+        var: A Pyomo ``VarData`` or indexed ``Var``.
+        integer: Whether the variables must be integer (else continuous).
+        caller: The public function's name, for the message.
+
+    Raises:
+        TypeError: If a member is not a Pyomo variable or has the wrong domain.
+    """
+    for v in _members(var, caller):
+        if v.is_binary():
+            raise TypeError(f"{caller}: '{v.name}' is binary, which is 0 or 1 already")
+        if v.is_integer() != integer:
+            want = "an integer" if integer else "a continuous"
+            other = "semicontinuous" if integer else "semiinteger"
+            raise TypeError(f"{caller}: '{v.name}' is not {want} variable; use {other} for it")
+        _record(v.model()).holes[id(v)] = v
+
+
+def _members(var, caller):
+    """The variables in ``var``: itself, or every element of an indexed ``Var``.
+
+    Args:
+        var: A Pyomo ``VarData`` or indexed ``Var``.
+        caller: The public function's name, for the message.
+
+    Returns:
+        list: The ``VarData`` objects.
+
+    Raises:
+        TypeError: If ``var`` is not a Pyomo variable.
+    """
+    if not _is_pyomo_var(var):
+        raise TypeError(f"{caller}: expected a Pyomo variable, got {var!r}")
+    return list(var.values()) if var.is_indexed() else [var]
+
+
+def _is_pyomo_var(x):
+    """Whether ``x`` is a Pyomo variable: a single one (``m.x``, ``m.ship[1]``) or
+    an indexed family (``m.ship``).
+
+    Args:
+        x: Anything.
+
+    Returns:
+        bool: True for a Pyomo ``Var`` component or one of its elements.
+    """
+    return getattr(x, "ctype", None) is Var
+
+
+def active(var):
+    """Whether the variable ``var`` is in use: an expression that is 1 when
+    ``var`` is not 0, and 0 when it is.
+
+    A fee due whenever a delivery is made is ``fee * active(m.ship[w, c])``. On a
+    variable that is 0 or within its bounds (:func:`semicontinuous`,
+    :func:`semiinteger`), such a fee keeps a linear model linear, so the service
+    solves it exactly.
+
+    Raises:
+        TypeError: If ``var`` is not a single Pyomo variable.
+    """
+    if not _is_pyomo_var(var) or var.is_indexed():
+        raise TypeError(f"active: expected a single Pyomo variable such as m.x or m.ship[1], "
+                        f"got {var!r}")
+    return _Active([var])
+
+
+def block(model, name, vars):
+    """Declare a block: the variables of one subproblem of the model, such as one
+    customer's supply or one project's staffing.
+
+    The constraints over a block's own variables alone, such as that customer's
+    demand, hold in every solution the service returns. A block changes nothing
+    else about the model; it tells the service which variables belong together.
+
+    ``vars`` is a list of variables, indexed ones included (every element).
+    ``name`` must be new among the model's blocks. A variable belongs to at most
+    one block, and a block's variables need finite bounds.
+
+    Raises:
+        TypeError: If ``model`` is not a Pyomo model, ``name`` not a string, or a
+            member not a Pyomo variable.
+        ValueError: If the block is empty, its name is taken, a variable is listed
+            twice or is in another block, or a variable belongs to another model.
+    """
+    record = _record(model)
+    _check_name(name)
+    if name in record.blocks:
+        raise ValueError(f"block '{name}' is already declared on this model")
+    members = [v for x in vars for v in _members(x, "block")]
+    if not members:
+        raise ValueError(f"block '{name}' has no variables")
+    owner = {id(v): other for (other, vs) in record.blocks.items() for v in vs}
+    seen = set()
+    for v in members:
+        if v.model() is not model:
+            raise ValueError(f"block '{name}': '{v.name}' belongs to another model")
+        if id(v) in seen:
+            raise ValueError(f"block '{name}' lists '{v.name}' twice")
+        if id(v) in owner:
+            raise ValueError(f"'{v.name}' is already in block '{owner[id(v)]}'; a variable "
+                             "belongs to at most one block")
+        seen.add(id(v))
+    record.blocks[name] = members

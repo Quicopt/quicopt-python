@@ -91,8 +91,8 @@ from urllib.parse import quote, urlencode
 from .ir import Program
 from .wire import encode
 
-__all__ = ["Client", "Job", "Result", "Arrangement", "QuicoptError", "DEFAULT_BASE_URL",
-           "KEY_PATH_ENV"]
+__all__ = ["Client", "Job", "Result", "Arrangement", "Grouping", "QuicoptError",
+           "DEFAULT_BASE_URL", "KEY_PATH_ENV"]
 
 _OCTET = "application/octet-stream"
 
@@ -187,14 +187,23 @@ class Arrangement:
 
 
 @dataclass(frozen=True)
+class Grouping:
+    """The assignment the service found for one partition (see
+    ``quicopt.structured``): ``part_of[i]`` is the part item ``i`` is in, counted
+    from 0, and ``size_of[b]`` the number of items in part ``b``."""
+    part_of: List[int]
+    size_of: List[int]
+
+
+@dataclass(frozen=True)
 class Result:
     """A finished solve, parsed from the service's result JSON. ``objective`` and
     ``feasible`` are ``None`` where the outcome leaves them undefined — a model
     with nothing to feasibility-check, or a run that found no solution.
     ``display`` is the framed, ready-to-print summary the service renders the same
-    way for every kind of model. ``structures`` holds the :class:`Arrangement` of
-    each permutation the model declares, by name, and is empty for a model with
-    none."""
+    way for every kind of model. ``structures`` holds, by name, the
+    :class:`Arrangement` of each permutation and the :class:`Grouping` of each
+    partition the model declares, and is empty for a model with neither."""
     job_id: str
     status: str
     objective: Optional[float]
@@ -203,7 +212,7 @@ class Result:
     solve_time_seconds: float
     solver_data: Dict[str, Any]
     display: str
-    structures: Dict[str, Optional[Arrangement]] = field(default_factory=dict)
+    structures: Dict[str, Union[Arrangement, Grouping, None]] = field(default_factory=dict)
 
     @property
     def model_class(self) -> Optional[str]:
@@ -237,25 +246,29 @@ class Result:
             solve_time_seconds=d.get("solve_time_seconds", 0.0),
             solver_data=dict(d.get("solver_data") or {}),
             display=d.get("display", ""),
-            structures={name: _arrangement(s) for (name, s) in (d.get("structures") or {}).items()},
+            structures={name: _structure(s) for (name, s) in (d.get("structures") or {}).items()},
         )
 
 
-def _arrangement(s: Optional[Dict[str, Any]]) -> Optional[Arrangement]:
-    """Read one permutation's arrangement from the result JSON.
+def _structure(s: Optional[Dict[str, Any]]) -> Union[Arrangement, Grouping, None]:
+    """Read one structure's value from the result JSON: a permutation's
+    arrangement (keys ``item_at``, ``slot_of``) or a partition's grouping (keys
+    ``part_of``, ``size_of``).
 
-    The service counts items and slots from 1; Python, and this client's
-    ``quicopt.structured``, from 0.
+    The service counts items, slots and parts from 1; Python, and this client's
+    ``quicopt.structured``, from 0. A part's size is a count and is not shifted.
 
     Args:
-        s: The JSON object with ``item_at`` and ``slot_of``, or ``None`` when no
-            solver returned an arrangement.
+        s: The JSON object, or ``None`` when no solver returned a value.
 
     Returns:
-        The arrangement counted from 0, or ``None``.
+        The arrangement or grouping counted from 0, or ``None``.
     """
     if s is None:
         return None
+    if "part_of" in s:
+        return Grouping(part_of=[int(b) - 1 for b in s["part_of"]],
+                        size_of=[int(n) for n in s["size_of"]])
     return Arrangement(item_at=[int(i) - 1 for i in s["item_at"]],
                        slot_of=[int(k) - 1 for k in s["slot_of"]])
 

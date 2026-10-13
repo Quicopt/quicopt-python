@@ -20,7 +20,7 @@ import warnings
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-from quicopt import (Apply, Arrangement, Client, Const, Constraint, CONTINUOUS,
+from quicopt import (Apply, Arrangement, Grouping, Client, Const, Constraint, CONTINUOUS,
                      DEFAULT_BASE_URL, Job, Nonneg, Program, QuicoptError, Var, VarDecl,
                      encode)
 
@@ -409,6 +409,13 @@ def test_structures_count_from_zero():
     assert res.structures["lost"] is None
     with _serve() as (client, _srv):
         assert client.solve(_program()).structures == {}
+
+
+def test_a_grouping_counts_parts_from_zero_and_sizes_as_given():
+    result = dict(_RESULT, structures={"teams": {"part_of": [1, 2, 2, 1, 2], "size_of": [2, 3]}})
+    with _serve(result=result) as (client, _srv):
+        res = client.solve(_program())
+    assert res.structures["teams"] == Grouping(part_of=[0, 1, 1, 0, 1], size_of=[2, 3])
 
 
 if __name__ == "__main__":

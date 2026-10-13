@@ -21,10 +21,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))                       # importable without an install
 
 from quicopt import (Const, Param, Var, Apply, Reduce, SetRef, SourceRef,   # noqa: E402
-                     StructRef, TableRef, PermutationDecl,
+                     StructRef, TableRef, PermutationDecl, PartitionDecl,
                      Zero, Nonneg, Indicator, Parametric, Empirical,
                      VarDecl, IndexSet, Constraint, Program,
-                     CONTINUOUS, BINARY, encode)
+                     CONTINUOUS, INTEGER, BINARY, SEMICONTINUOUS, SEMIINTEGER, encode)
 
 GOLD = ROOT / "tests" / "goldens"
 
@@ -179,6 +179,48 @@ def _struct_stoch():                                        # a structure in a s
         structures={"tour": PermutationDecl(3)})
 
 
+def _holes_blocks():                                        # holes, an indicator, a step and a min, two blocks
+    # A semi-integer and a semicontinuous variable, a fixed charge through the
+    # first one's indicator, a step and a min over sums, a binary, and two blocks:
+    # one of scalars, one of the elements of an indexed family.
+    q, r, s = Var("q"), Var("r"), Var("s")
+    x = lambda i: Var("x", (i,))
+    ind = lambda e: Apply("indicator", [e])
+    return Program(
+        sets=[IndexSet("I", [1, 2])],
+        vars=[VarDecl("q", [], SEMIINTEGER, 10.0, 25.0, 0.0),
+              VarDecl("r", [], SEMICONTINUOUS, 2.5, 8.0, 0.0),
+              VarDecl("s", [], BINARY, 0.0, 1.0, 0.0),
+              VarDecl("x", ["I"], INTEGER, 0.0, 4.0, 0.0)],
+        objective=Apply("+", [
+            Apply("*", [Const(1.5), q]), Apply("*", [Const(2.0), r]),
+            Apply("*", [Const(30.0), ind(q)]),
+            Apply("*", [Const(40.0), Apply("step", [
+                Apply("-", [Apply("+", [x(1), x(2)]), Const(1.0)])])]),
+            Apply("*", [Const(-5.0), Apply("min", [Const(1.0), Apply("+", [ind(q), ind(r)])])])]),
+        sense="min",
+        constraints=[Constraint(Apply("-", [Apply("+", [q, r]), Const(12.0)]), Nonneg(), []),
+                     Constraint(Apply("-", [Apply("*", [Const(8.0), s]), r]), Nonneg(), []),
+                     Constraint(Apply("-", [Apply("+", [x(1), x(2)]), Const(3.0)]), Nonneg(), [])],
+        blocks={"supply": [q, r, s], "pair": [x(1), x(2)]})
+
+
+def _partition():                                           # a live and a fixed partition
+    teams, split = StructRef("teams"), StructRef("split")
+    part = lambda i: Apply("part_of", [Const(float(i)), teams])
+    size = lambda b, P: Apply("size_of", [Const(float(b)), P])
+    return Program(
+        params={"cost": {(1,): 2.0, (2,): 0.5}},
+        vars=[VarDecl("y", [], CONTINUOUS, 0.0, 5.0, 0.0)],
+        objective=Apply("+", [TableRef("cost", [part(1)]), TableRef("cost", [part(3)]),
+                              Apply("^", [Apply("-", [size(1, teams), size(2, teams)]), Const(2.0)]),
+                              Var("y")]),
+        sense="min",
+        constraints=[Constraint(Apply("-", [Var("y"), size(3, split)]), Nonneg(), [])],
+        structures={"teams": PartitionDecl(5, 2, start=[1, 2, 1, 2, 1]),
+                    "split": PartitionDecl(4, 3, start=[3, 1, 3, 2], fixed=True)})
+
+
 FIXTURES = {
     "scalar_nlp": _scalar_nlp,
     "bounds_zero_start": _bounds_zero_start,
@@ -190,6 +232,8 @@ FIXTURES = {
     "struct_assignment": _struct_assignment,
     "struct_fixed": _struct_fixed,
     "struct_stoch": _struct_stoch,
+    "holes_blocks": _holes_blocks,
+    "partition": _partition,
 }
 
 
