@@ -19,18 +19,18 @@ Steps:
 """
 from .ir import (Const, Param, Var, Apply, Reduce, SetRef, SourceRef,
                  StructRef, TableRef,
-                 Zero, Nonneg, Indicator, Parametric, Empirical, PermutationDecl,
+                 Zero, Nonneg, Indicator, Parametric, Empirical, PermutationDecl, PartitionDecl,
                  VarDecl, IndexSet, Constraint, Program,
-                 Domain, CONTINUOUS, INTEGER, BINARY)
+                 Domain, CONTINUOUS, INTEGER, BINARY, SEMICONTINUOUS, SEMIINTEGER)
 from .wire import encode, encode_params, SCHEMA_VERSION
-from .client import Client, Job, Result, Arrangement, QuicoptError, DEFAULT_BASE_URL
+from .client import Client, Job, Result, Arrangement, Grouping, QuicoptError, DEFAULT_BASE_URL
 
 __all__ = [
     "Const", "Param", "Var", "Apply", "Reduce", "SetRef", "SourceRef",
     "StructRef", "TableRef",
-    "Zero", "Nonneg", "Indicator", "Parametric", "Empirical", "PermutationDecl",
+    "Zero", "Nonneg", "Indicator", "Parametric", "Empirical", "PermutationDecl", "PartitionDecl",
     "VarDecl", "IndexSet", "Constraint", "Program",
-    "Domain", "CONTINUOUS", "INTEGER", "BINARY",
+    "Domain", "CONTINUOUS", "INTEGER", "BINARY", "SEMICONTINUOUS", "SEMIINTEGER",
     "encode", "encode_params", "SCHEMA_VERSION",
-    "Client", "Job", "Result", "Arrangement", "QuicoptError", "DEFAULT_BASE_URL",
+    "Client", "Job", "Result", "Arrangement", "Grouping", "QuicoptError", "DEFAULT_BASE_URL",
 ]

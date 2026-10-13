@@ -57,22 +57,33 @@ __all__ = [
     "Const", "Param", "Var", "Apply", "Reduce", "SetRef", "SourceRef",
     "StructRef", "TableRef",
     "Zero", "Nonneg", "Indicator",
-    "Parametric", "Empirical", "PermutationDecl",
+    "Parametric", "Empirical", "PermutationDecl", "PartitionDecl",
     "VarDecl", "IndexSet", "Constraint", "Program",
-    "Domain", "CONTINUOUS", "INTEGER", "BINARY",
+    "Domain", "CONTINUOUS", "INTEGER", "BINARY", "SEMICONTINUOUS", "SEMIINTEGER",
 ]
 
 
 class Domain(IntEnum):
-    """The domain a variable ranges over. Values are the codes the service reads."""
+    """The domain a variable ranges over. Values are the codes the service reads.
+
+    ``SEMICONTINUOUS`` and ``SEMIINTEGER`` are the two domains with a hole: the
+    variable is 0 or lies within its bounds, never in between — any value there
+    for ``SEMICONTINUOUS``, a whole number for ``SEMIINTEGER``. Both bounds must
+    be finite. When 0 already lies within the bounds there is no hole, and the
+    variable is an ordinary continuous or integer one.
+    """
     CONTINUOUS = 1
     INTEGER = 2
     BINARY = 3
+    SEMICONTINUOUS = 4
+    SEMIINTEGER = 5
 
 
 CONTINUOUS = Domain.CONTINUOUS
 INTEGER = Domain.INTEGER
 BINARY = Domain.BINARY
+SEMICONTINUOUS = Domain.SEMICONTINUOUS
+SEMIINTEGER = Domain.SEMIINTEGER
 
 
 # ── Expression = Const | Param | Var | Apply | Reduce | SourceRef | StructRef | TableRef
@@ -148,8 +159,10 @@ class StructRef(Expression):
     It appears only as the second argument of the operator that reads one of the
     structure's parts: ``Apply("item_at", [Const(3.0), StructRef("tour")])`` is the
     item in slot 3 of the permutation ``tour``, and ``Apply("slot_of", [Const(2.0),
-    StructRef("tour")])`` the slot of item 2. Items and slots count from 1 here, as
-    in the service's schema."""
+    StructRef("tour")])`` the slot of item 2. A partition's parts are read with
+    ``"part_of"`` (the part an item is in) and ``"size_of"`` (how many items a
+    part holds). Items, slots and parts count from 1 here, as in the service's
+    schema."""
     name: str
 
 
@@ -211,7 +224,7 @@ class Empirical:
     data: list                 # list[float], length == Program.scenarios
 
 
-# ── Structure = PermutationDecl ─────────────────────────────────────────────
+# ── Structure = PermutationDecl | PartitionDecl ─────────────────────────────
 
 @dataclass
 class PermutationDecl:
@@ -227,6 +240,20 @@ class PermutationDecl:
     start: list = field(default_factory=list)      # list[int], empty or a permutation of 1..size
     fixed: bool = False
     precede: list = field(default_factory=list)    # list[(int, int)]
+
+
+@dataclass
+class PartitionDecl:
+    """An assignment of ``size`` items to ``parts`` parts, as the service's schema
+    states it: items and parts count from 1, and a part may stay empty.
+
+    ``start`` is empty, or lists the starting part of each item (``start[i - 1]``
+    is the part of item ``i``). ``fixed`` pins the assignment at ``start``, which
+    must then be given."""
+    size: int
+    parts: int
+    start: list = field(default_factory=list)      # list[int], empty or one part in 1..parts per item
+    fixed: bool = False
 
 
 # ── variables, constraints, container ───────────────────────────────────────
@@ -274,8 +301,15 @@ class Program:
     their defaults they say nothing, and the encoded bytes are those of a
     deterministic model.
 
-    Structured decision variables, such as a permutation, are declared by name in
-    ``structures`` and read in expressions through :class:`StructRef`."""
+    Structured decision variables, a permutation or a partition, are declared by
+    name in ``structures`` and read in expressions through :class:`StructRef`.
+
+    ``blocks`` names groups of variables, each the variables of one subproblem of
+    the model (one customer's supply, say), as ``{name: [Var, …]}``. A variable is
+    in at most one block, and a block's members need finite bounds. A block
+    changes nothing about what the model means; the service keeps each block's
+    own constraints, those over its members alone, satisfied in every solution
+    it returns."""
     sets: list = field(default_factory=list)          # list[IndexSet]
     indexed_sets: dict = field(default_factory=dict)  # {name: {tuple: list}}  a[(i,)] -> [j…]
     params: dict = field(default_factory=dict)        # {name: {tuple: float}} p[(i,)], A[(i,j)]
@@ -287,4 +321,5 @@ class Program:
     scenarios: int = 1                                # R — how many are drawn
     scenario_seed: int = 1                            # the draw seed
     sources: dict = field(default_factory=dict)       # {name: Parametric | Empirical}
-    structures: dict = field(default_factory=dict)    # {name: PermutationDecl}
+    structures: dict = field(default_factory=dict)    # {name: PermutationDecl | PartitionDecl}
+    blocks: dict = field(default_factory=dict)        # {name: list[Var]}

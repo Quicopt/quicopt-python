@@ -44,7 +44,7 @@ from io import BytesIO
 
 from .ir import (Const, Param, Var, Apply, Reduce, SetRef, SourceRef,
                  StructRef, TableRef,
-                 Zero, Nonneg, Indicator, Parametric, Empirical, PermutationDecl,
+                 Zero, Nonneg, Indicator, Parametric, Empirical, PermutationDecl, PartitionDecl,
                  VarDecl, IndexSet, Program)
 
 # Hand-rolled rather than protoc-generated: the schema is small and frozen, and the
@@ -627,16 +627,19 @@ def _enc_structure(io, name, s):
     """Encode one named structure into a ``StructureDecl`` message body.
 
     Field 1 is the name, field 2 the kind as the service names it
-    (``"permutation"``), field 3 the size. The start (field 4) is *packed* — one
-    length-delimited run of varints, what a protoc-generated encoder emits for a
-    proto3 ``repeated int64`` — and omitted when empty; ``fixed`` (field 5) is
-    omitted when false, as proto3 omits a false ``bool``; each precedence is a
-    ``(before, after)`` message (field 6), in declaration order.
+    (``"permutation"`` or ``"partition"``), field 3 the number of items. The start
+    (field 4) is *packed* — one length-delimited run of varints, what a
+    protoc-generated encoder emits for a proto3 ``repeated int64`` — and omitted
+    when empty; ``fixed`` (field 5) is omitted when false, as proto3 omits a false
+    ``bool``. A permutation then has each precedence as a ``(before, after)``
+    message (field 6), in declaration order; a partition has its number of parts
+    (field 7).
 
     Args:
         io: The byte sink.
         name: The name the structure is declared and referenced under.
-        s: The declaration (:class:`~quicopt.ir.PermutationDecl`).
+        s: The declaration (:class:`~quicopt.ir.PermutationDecl` or
+            :class:`~quicopt.ir.PartitionDecl`).
 
     Returns:
         None. The fields are appended to ``io``.
@@ -644,17 +647,37 @@ def _enc_structure(io, name, s):
     Raises:
         TypeError: If ``s`` is not a structure declaration.
     """
-    if not isinstance(s, PermutationDecl):
+    if not isinstance(s, (PermutationDecl, PartitionDecl)):
         raise TypeError(f"wire: not a structure declaration: {s!r}")
     _wstr(io, 1, name)
-    _wstr(io, 2, "permutation")
+    _wstr(io, 2, "permutation" if isinstance(s, PermutationDecl) else "partition")
     _wvarint(io, 3, s.size)
     if s.start:
         _wbytes(io, 4, _msg(lambda b: _enc_packed_varints(b, s.start)))
     if s.fixed:
         _wvarint(io, 5, 1)
-    for (before, after) in s.precede:
-        _wmsg(io, 6, _msg(lambda b, before=before, after=after: _enc_precedence(b, before, after)))
+    if isinstance(s, PermutationDecl):
+        for (before, after) in s.precede:
+            _wmsg(io, 6, _msg(lambda b, before=before, after=after: _enc_precedence(b, before, after)))
+    else:
+        _wvarint(io, 7, s.parts)
+
+
+def _enc_block(io, name, members):
+    """Encode one named block into a ``BlockDecl`` message body: the name (field
+    1), then each member as a ``VarRef`` (field 2), in the order given.
+
+    Args:
+        io: The byte sink.
+        name: The block's name.
+        members: The block's variables, a list of :class:`~quicopt.ir.Var`.
+
+    Returns:
+        None. The fields are appended to ``io``.
+    """
+    _wstr(io, 1, name)
+    for v in members:
+        _wmsg(io, 2, _msg(lambda b, v=v: _enc_var_ref(b, v)))
 
 
 def _enc_packed_varints(io, xs):
@@ -690,9 +713,9 @@ def encode(prog: Program) -> bytes:
     """Encode a ``Program`` to the (v1) bytes the service reads.
 
     Two equal Programs always encode to equal bytes, whichever order their tables
-    happened to be built in. A model that declares no uncertainty and no structure
-    encodes to exactly the bytes it would have before either existed, so neither
-    costs an ordinary model anything.
+    happened to be built in. A model that declares no uncertainty, no structure
+    and no block encodes to exactly the bytes it would have before any of them
+    existed, so none of them costs an ordinary model anything.
 
     Args:
         prog: The :class:`~quicopt.ir.Program` to encode.
@@ -701,7 +724,8 @@ def encode(prog: Program) -> bytes:
         bytes: The message, deterministic and identical byte for byte to what the
         Quicopt service produces for the same model.
     """
-    # Fields in schema order (1–8 deterministic, 9–11 stochastic, 12 structured);
+    # Fields in schema order (1–8 deterministic, 9–11 stochastic, 12 structured,
+    # 13 blocks);
     # the order-free tables are emitted sorted, which is what makes equal Programs
     # equal bytes. The two scenario scalars are omitted at their default of 1, which
     # is also why the default is 1 and not 0: protobuf cannot tell a zero from an
@@ -734,6 +758,8 @@ def encode(prog: Program) -> bytes:
         _wmsg(io, 11, _msg(lambda b, name=name: _enc_source(b, name, prog.sources[name])))
     for name in sorted(prog.structures.keys()):
         _wmsg(io, 12, _msg(lambda b, name=name: _enc_structure(b, name, prog.structures[name])))
+    for name in sorted(prog.blocks.keys()):
+        _wmsg(io, 13, _msg(lambda b, name=name: _enc_block(b, name, prog.blocks[name])))
     return io.getvalue()
 
 

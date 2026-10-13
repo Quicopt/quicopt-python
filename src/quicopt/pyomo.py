@@ -47,17 +47,20 @@ import pyomo.environ as pyo
 
 from ._terms import _emit, _sum
 from .ir import (Const, Var, Apply, VarDecl, Program, SourceRef, StructRef, TableRef,
-                 Parametric, Empirical, PermutationDecl, CONTINUOUS, INTEGER, BINARY)
+                 Parametric, Empirical, PermutationDecl, PartitionDecl,
+                 CONTINUOUS, INTEGER, BINARY, SEMICONTINUOUS, SEMIINTEGER)
 from .stochastic import _declarations
 from .structured import _declarations as _structured_declarations, _Part, _Lookup
 
 # The ops the service knows. A head outside this set raises — resolve it in the
 # service's catalog, do not paper over it here. ``smean`` to ``sfreq_geq`` are the
 # scenario aggregators (see ``quicopt.stochastic``); ``max``/``min`` are Pyomo's
-# own nodes; ``item_at``/``slot_of`` read a permutation (``quicopt.structured``).
+# own nodes; ``item_at``/``slot_of`` read a permutation and ``part_of``/``size_of``
+# a partition (``quicopt.structured``); ``indicator`` is ``active``'s head, and
+# ``step`` and ``indicator`` are what Pyomo's ``Expr_if`` imports as.
 _CATALOG = {"+", "-", "*", "/", "^", "sin", "cos", "exp", "log", "sqrt", "abs",
             "max", "min", "smean", "scvar", "sfreq_leq", "sfreq_geq",
-            "item_at", "slot_of"}
+            "item_at", "slot_of", "part_of", "size_of", "indicator", "step"}
 
 
 # ── Pyomo expression node → Quicopt Expression ──────────────────────────────
@@ -83,9 +86,11 @@ def _expr(node, var):
         return Const(float(node))
     if isinstance(node, _Part):                 # counted from 0 here, from 1 on the wire
         part = _apply(node._head, [Const(float(node._position + 1)), StructRef(node._structure)])
-        return Apply("-", [part, Const(1.0)])
+        return part if node._head == "size_of" else Apply("-", [part, Const(1.0)])   # a size is a count
     if isinstance(node, _Lookup):
         return TableRef(node._table, [_one_based(_expr(a, var)) for a in node.args])
+    if node.is_expression_type() and node.getname() == "Expr_if":
+        return _expr_if(node, var)
     if node.is_expression_type():
         head = node.getname()
         args = [_expr(a, var) for a in node.args]
@@ -105,6 +110,51 @@ def _expr(node, var):
     if node.is_variable_type():
         return var(node)
     return Const(float(pyo.value(node)))        # constant / parameter leaf → baked to data
+
+
+def _expr_if(node, var):
+    """Import Pyomo's ``Expr_if(IF=c, THEN=a, ELSE=b)`` as ``b + (a − b)·t``.
+
+    ``t`` is 1 where the comparison ``c`` holds, else 0, written with the two 0/1
+    operators the service knows: ``step(e) = 1`` for ``e ≥ 0``, and
+    ``indicator(e) = 1`` for ``e ≠ 0``. Pyomo stores ``x ≥ y`` as ``y ≤ x``, so
+    three cases cover every comparison:
+
+    - ``l ≤ r`` is ``step(r − l)``;
+    - ``l < r`` is ``1 − step(l − r)``;
+    - ``l = r`` is ``1 − indicator(l − r)``.
+
+    With ``THEN=1, ELSE=0`` the result is ``t`` itself.
+
+    Args:
+        node: The Pyomo ``Expr_if`` node.
+        var: The variable-mapping callable.
+
+    Returns:
+        Expression: The imported expression.
+
+    Raises:
+        ValueError: If the condition is not a single comparison (a ranged
+            ``lo ≤ x ≤ hi``, a constant, a logical expression).
+    """
+    cond, then, other = node.args
+    name = type(cond).__name__
+    if name == "InequalityExpression":
+        lhs, rhs = (_expr(a, var) for a in cond.args)
+        t = (Apply("-", [Const(1.0), _apply("step", [Apply("-", [lhs, rhs])])]) if cond.strict
+             else _apply("step", [Apply("-", [rhs, lhs])]))
+    elif name == "EqualityExpression":
+        lhs, rhs = (_expr(a, var) for a in cond.args)
+        t = Apply("-", [Const(1.0), _apply("indicator", [Apply("-", [lhs, rhs])])])
+    else:
+        raise ValueError(f"Expr_if: the condition must be one comparison (<=, <, >=, >, ==), "
+                         f"got {cond}; write a range as two nested Expr_if")
+    a, b = _expr(then, var), _expr(other, var)
+    if isinstance(a, Const) and isinstance(b, Const):
+        if (a.value, b.value) == (1.0, 0.0):
+            return t
+        return _sum([b, Apply("*", [Const(a.value - b.value), t])])
+    return _sum([b, Apply("*", [Apply("-", [a, b]), t])])
 
 
 def _apply(op, args):
@@ -223,13 +273,15 @@ def _source_decls(sources, scenarios, var):
 
 def _structure_decls(structured):
     """Build the ``Program``'s structure declarations from the model's registry,
-    shifting items and slots from the surface's count from 0 to the wire's from 1.
+    shifting items, slots and parts from the surface's count from 0 to the wire's
+    from 1.
 
     Args:
         structured: The model's ``_Structured`` record.
 
     Returns:
-        dict: ``name → PermutationDecl``, the ``Program.structures`` table.
+        dict: ``name → PermutationDecl | PartitionDecl``, the ``Program.structures``
+        table.
 
     Raises:
         ValueError: If a start places an item after one it must follow.
@@ -242,6 +294,8 @@ def _structure_decls(structured):
                                  f"{after}, which it must precede")
         decls[name] = PermutationDecl(perm.n, start=[s + 1 for s in perm.start],
                                       precede=[(a + 1, b + 1) for (a, b) in perm.precede])
+    for (name, part) in structured.partitions.items():
+        decls[name] = PartitionDecl(part.n, part.parts, start=[b + 1 for b in part.start])
     return decls
 
 
@@ -266,7 +320,8 @@ def _table_params(structured):
 
 
 def _check_names(structured, taken):
-    """Refuse a permutation or table whose name is already in use in the model.
+    """Refuse a permutation, partition or table whose name is already in use in
+    the model.
 
     The service reads every name as one thing — a decision variable, a random
     variable, a structure or a table — so a clash would be refused there; here the
@@ -279,10 +334,63 @@ def _check_names(structured, taken):
     Raises:
         ValueError: On the first clash.
     """
-    for name in list(structured.permutations) + list(structured.tables):
+    for name in list(structured.permutations) + list(structured.partitions) + list(structured.tables):
         if name in taken:
-            raise ValueError(f"the name '{name}' of a permutation or lookup table is also "
-                             "the name of a variable in this model; rename one of them")
+            raise ValueError(f"the name '{name}' of a permutation, partition or lookup table is "
+                             "also the name of a variable in this model; rename one of them")
+
+
+def _domain(v, holed):
+    """The ``Program`` domain of the Pyomo variable ``v``.
+
+    A variable marked as 0 or within its bounds (``holed``) is ``SEMIINTEGER`` or
+    ``SEMICONTINUOUS`` by its integrality, unless it is fixed: a pin takes one
+    value, which is no hole. Every other variable is ``BINARY``, ``INTEGER`` or
+    ``CONTINUOUS``.
+
+    Args:
+        v: The Pyomo ``VarData``.
+        holed: Whether ``v`` was marked by ``semicontinuous``/``semiinteger``.
+
+    Returns:
+        Domain: The domain.
+
+    Raises:
+        ValueError: If a marked variable lacks a finite bound.
+    """
+    if holed and not v.fixed:
+        if v.lb is None or v.ub is None:
+            raise ValueError(f"variable '{v.name}' is 0 or within its bounds, so both bounds "
+                             f"must be finite; it has [{v.lb}, {v.ub}]")
+        return SEMIINTEGER if v.is_integer() else SEMICONTINUOUS
+    return BINARY if v.is_binary() else INTEGER if v.is_integer() else CONTINUOUS
+
+
+def _blocks(structured, name, sources):
+    """Build the ``Program``'s blocks from the model's registry.
+
+    Args:
+        structured: The model's ``_Structured`` record.
+        name: The map ``id(vardata) → Program variable name``.
+        sources: The model's random variables, ``id(vardata) → (…)``.
+
+    Returns:
+        dict: ``block name → [Var, …]``, members in the order given.
+
+    Raises:
+        ValueError: If a member is a random variable or has an infinite bound.
+    """
+    blocks = {}
+    for (bname, members) in structured.blocks.items():
+        for v in members:
+            if id(v) in sources:
+                raise ValueError(f"block '{bname}': '{v.name}' is a random variable, not a "
+                                 "decision; a block holds decision variables")
+            if not v.fixed and (v.lb is None or v.ub is None):
+                raise ValueError(f"block '{bname}': '{v.name}' has bounds [{v.lb}, {v.ub}]; "
+                                 "a block's variables need finite bounds")
+        blocks[bname] = [Var(name[id(v)], ()) for v in members]
+    return blocks
 
 
 def import_model(m):
@@ -304,12 +412,20 @@ def import_model(m):
     random never renumbers the rest. A model that declares no uncertainty imports
     to exactly the ``Program`` it always did.
 
-    A permutation or lookup table (see ``quicopt.structured``) becomes a named
-    declaration in ``Program.structures`` or ``Program.params``. Its items, slots
-    and positions count from 0 in the model and from 1 in the ``Program``, which is
-    how the service counts them; the shift is made here.
+    A permutation, partition or lookup table (see ``quicopt.structured``) becomes a
+    named declaration in ``Program.structures`` or ``Program.params``. Its items,
+    slots, parts and positions count from 0 in the model and from 1 in the
+    ``Program``, which is how the service counts them; the shift is made here. A
+    variable marked as 0 or within its bounds becomes ``SEMICONTINUOUS`` or
+    ``SEMIINTEGER``, and the model's blocks become ``Program.blocks``.
+
+    Pyomo's ``Expr_if(IF=c, THEN=a, ELSE=b)`` is read when ``c`` is one
+    comparison (``<=``, ``<``, ``>=``, ``>`` or ``==``); a range such as
+    ``pyo.inequality(1, x, 3)`` raises, and is written as two nested ``Expr_if``.
     """
     declared = _declarations(m)
+    structured = _structured_declarations(m)
+    holes = {} if structured is None else structured.holes
     sources = {} if declared is None else declared.sources
     scenarios = 1 if declared is None else declared.scenarios
     seed = 1 if declared is None else declared.seed
@@ -324,13 +440,18 @@ def import_model(m):
         if id(v) in sources:                   # a random variable is declared, never decided
             _check_source(v, sources[id(v)][1])
             continue
-        domain = BINARY if v.is_binary() else INTEGER if v.is_integer() else CONTINUOUS
         if v.fixed and v.value is None:            # else the pin below is (None, None) ⇒ ±Inf ⇒ silently free
             raise ValueError(f"variable '{v.name}' is fixed but has no value")
+        domain = _domain(v, id(v) in holes)
         lb, ub = (v.value, v.value) if v.fixed else (v.lb, v.ub)   # a fixed var ⇒ a [val, val] pin
         lb = -inf if lb is None else lb                            # an absent Pyomo bound ⇒ ±Inf (free)
         ub =  inf if ub is None else ub
-        start = v.value if v.value is not None else min(max(0.0, lb), ub)   # clamp 0 into [lb, ub]
+        if v.value is not None:
+            start = v.value
+        elif domain in (SEMICONTINUOUS, SEMIINTEGER):
+            start = 0.0                                            # 0 is in a holed domain: start off
+        else:
+            start = min(max(0.0, lb), ub)                          # clamp 0 into [lb, ub]
         vars.append(VarDecl(name[id(v)], [], domain, float(lb), float(ub), float(start)))
 
     objs = list(m.component_data_objects(pyo.Objective, active=True))
@@ -345,12 +466,13 @@ def import_model(m):
         ub = pyo.value(c.upper) if c.has_ub() else inf
         _emit(cons, _expr(c.body, var), lb, ub)
 
-    structured = _structured_declarations(m)
-    structures, params = {}, {}
+    structures, params, blocks = {}, {}, {}
     if structured is not None:
         _check_names(structured, set(name.values()) | {n for (_, n, _) in sources.values()})
         structures, params = _structure_decls(structured), _table_params(structured)
+        blocks = _blocks(structured, name, sources)
 
     return Program(params=params, vars=vars, objective=objective, sense=sense,
                    constraints=cons, scenarios=scenarios, scenario_seed=seed,
-                   sources=_source_decls(sources, scenarios, var), structures=structures)
+                   sources=_source_decls(sources, scenarios, var), structures=structures,
+                   blocks=blocks)
