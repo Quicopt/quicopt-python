@@ -18,17 +18,19 @@ Steps:
   client  — POST those bytes to the service and read the result (HTTP, stdlib)
 """
 from .ir import (Const, Param, Var, Apply, Reduce, SetRef, SourceRef,
-                 Zero, Nonneg, Indicator, Parametric, Empirical,
+                 StructRef, TableRef,
+                 Zero, Nonneg, Indicator, Parametric, Empirical, PermutationDecl,
                  VarDecl, IndexSet, Constraint, Program,
                  Domain, CONTINUOUS, INTEGER, BINARY)
 from .wire import encode, encode_params, SCHEMA_VERSION
-from .client import Client, Job, Result, QuicoptError, DEFAULT_BASE_URL
+from .client import Client, Job, Result, Arrangement, QuicoptError, DEFAULT_BASE_URL
 
 __all__ = [
     "Const", "Param", "Var", "Apply", "Reduce", "SetRef", "SourceRef",
-    "Zero", "Nonneg", "Indicator", "Parametric", "Empirical",
+    "StructRef", "TableRef",
+    "Zero", "Nonneg", "Indicator", "Parametric", "Empirical", "PermutationDecl",
     "VarDecl", "IndexSet", "Constraint", "Program",
     "Domain", "CONTINUOUS", "INTEGER", "BINARY",
     "encode", "encode_params", "SCHEMA_VERSION",
-    "Client", "Job", "Result", "QuicoptError", "DEFAULT_BASE_URL",
+    "Client", "Job", "Result", "Arrangement", "QuicoptError", "DEFAULT_BASE_URL",
 ]

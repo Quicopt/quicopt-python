@@ -34,6 +34,15 @@ try:
 except ImportError:                                         # the extra is absent
     pyo = None
 
+try:
+    import pulp
+except ImportError:                                         # the [pulp] extra is absent
+    pulp = None
+try:
+    from ortools.math_opt.python import mathopt
+except ImportError:                                         # the [mathopt] extra is absent
+    mathopt = None
+
 
 def _newsvendor():
     """Build the running example: one random demand, one order-up-to decision."""
@@ -316,6 +325,48 @@ def test_a_distribution_attaches_only_to_a_variable():
     m.x = pyo.Var(bounds=(0, 1))
     _raises(TypeError, set_distribution, m, 2 * m.x, Normal(0.0, 1.0))  # an expression
     _raises(TypeError, set_distribution, m, m.x, "normal")              # not a Distribution
+
+
+def test_only_a_whole_pyomo_model_holds_random_variables():
+    """A PuLP or MathOpt model, or a block inside a Pyomo model, is refused when
+    the declaration is made. On a block, the random variable would otherwise
+    import as a decision variable."""
+    if pyo is None:
+        print("skip  test_only_a_whole_pyomo_model_holds_random_variables (needs the [pyomo] extra)")
+        return
+    others = ([pulp.LpProblem("p", pulp.LpMinimize)] if pulp else []) + \
+             ([mathopt.Model(name="m")] if mathopt else [])
+    if not others:
+        print("skip  the PuLP and MathOpt cases (need the [pulp] or [mathopt] extra)")
+    for other in others:
+        message = _raises(TypeError, set_scenarios, other, 64)
+        assert "Pyomo model" in message and type(other).__name__ in message, message
+    m = pyo.ConcreteModel()
+    m.x = pyo.Var(bounds=(0, 9))
+    m.later = pyo.Block()
+    m.later.demand = pyo.Var()
+    assert "model itself" in _raises(TypeError, set_distribution, m.later, m.later.demand,
+                                     Normal(5.0, 1.0))
+    assert "model itself" in _raises(TypeError, set_scenarios, m.later, 64)
+    set_distribution(m, m.later.demand, Normal(5.0, 1.0))  # a block's variable, declared on the model
+    m.o = pyo.Objective(expr=expectation((m.later.demand - m.x) ** 2))
+    p = import_model(m)
+    assert [v.name for v in p.vars] == ["x1"] and list(p.sources) == ["later.demand"], p
+
+
+def test_aggregators_refuse_expressions_of_other_libraries():
+    """A PuLP expression inside an aggregator is named where it is passed."""
+    if pyo is None or pulp is None:
+        print("skip  test_aggregators_refuse_expressions_of_other_libraries "
+              "(needs the [pyomo] and [pulp] extras)")
+        return
+    x = pulp.LpVariable("x", 0, 4)
+    d = pulp.LpVariable("d")
+    for (aggregator, args) in ((expectation, (d - x,)), (cvar, (d - x, 0.9)),
+                               (maximum, (d - x, 0)), (minimum, (d, x))):
+        message = _raises(TypeError, aggregator, *args)
+        assert "Pyomo expressions" in message and "Lp" in message, message
+    _raises(TypeError, prob, d - x <= 0)
 
 
 def test_scenario_counts_below_one_are_refused():

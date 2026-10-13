@@ -1,0 +1,3 @@
+# `quicopt.structured`
+
+::: quicopt.structured

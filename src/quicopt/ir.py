@@ -55,8 +55,9 @@ from enum import IntEnum
 
 __all__ = [
     "Const", "Param", "Var", "Apply", "Reduce", "SetRef", "SourceRef",
+    "StructRef", "TableRef",
     "Zero", "Nonneg", "Indicator",
-    "Parametric", "Empirical",
+    "Parametric", "Empirical", "PermutationDecl",
     "VarDecl", "IndexSet", "Constraint", "Program",
     "Domain", "CONTINUOUS", "INTEGER", "BINARY",
 ]
@@ -74,7 +75,7 @@ INTEGER = Domain.INTEGER
 BINARY = Domain.BINARY
 
 
-# ── Expression = Const | Param | Var | Apply | Reduce | SourceRef ───────────
+# ── Expression = Const | Param | Var | Apply | Reduce | SourceRef | StructRef | TableRef
 
 class Expression:
     """Base of the expression grammar."""
@@ -139,6 +140,33 @@ class SourceRef(Expression):
     name: str
 
 
+@dataclass
+class StructRef(Expression):
+    """A reference to a structured decision variable declared in
+    ``Program.structures``, by name.
+
+    It appears only as the second argument of the operator that reads one of the
+    structure's parts: ``Apply("item_at", [Const(3.0), StructRef("tour")])`` is the
+    item in slot 3 of the permutation ``tour``, and ``Apply("slot_of", [Const(2.0),
+    StructRef("tour")])`` the slot of item 2. Items and slots count from 1 here, as
+    in the service's schema."""
+    name: str
+
+
+@dataclass
+class TableRef(Expression):
+    """The entry of the parameter table ``param`` at positions given by
+    expressions: one index for a table of one dimension, two for a table of two.
+
+    Unlike a :class:`Param`, whose index is fixed data, an index here may involve
+    decisions — a structure's part, an integer variable — so the entry is read
+    when the model is solved. The table must hold every entry on the positions
+    ``1..a`` (or ``1..a`` by ``1..b``). An index value that is not a whole number
+    is rounded, and one outside the table is moved to its nearest end."""
+    param: str
+    index: list                 # list[Expression], one or two
+
+
 # ── ConSet = Zero | Nonneg | Indicator ──────────────────────────────────────
 
 @dataclass
@@ -181,6 +209,24 @@ class Empirical:
     columns are read at the same scenario index, so columns drawn jointly stay
     correlated — which is how a joint distribution is expressed."""
     data: list                 # list[float], length == Program.scenarios
+
+
+# ── Structure = PermutationDecl ─────────────────────────────────────────────
+
+@dataclass
+class PermutationDecl:
+    """A permutation of ``size`` items over ``size`` slots, as the service's schema
+    states it: items and slots count from 1.
+
+    ``start`` is empty, or lists the starting slot of each item (``start[i - 1]``
+    is the slot of item ``i``), so it holds each of ``1..size`` once. ``fixed``
+    pins the permutation at ``start``, which must then be given. ``precede`` lists
+    ``(before, after)`` item pairs: ``before`` is placed in an earlier slot than
+    ``after`` in every arrangement the service considers."""
+    size: int
+    start: list = field(default_factory=list)      # list[int], empty or a permutation of 1..size
+    fixed: bool = False
+    precede: list = field(default_factory=list)    # list[(int, int)]
 
 
 # ── variables, constraints, container ───────────────────────────────────────
@@ -226,7 +272,10 @@ class Program:
     are drawn from (``scenario_seed``). The last two are model *data* — they pin
     the sampled instance, so the same Program always sees the same draws. Left at
     their defaults they say nothing, and the encoded bytes are those of a
-    deterministic model."""
+    deterministic model.
+
+    Structured decision variables, such as a permutation, are declared by name in
+    ``structures`` and read in expressions through :class:`StructRef`."""
     sets: list = field(default_factory=list)          # list[IndexSet]
     indexed_sets: dict = field(default_factory=dict)  # {name: {tuple: list}}  a[(i,)] -> [j…]
     params: dict = field(default_factory=dict)        # {name: {tuple: float}} p[(i,)], A[(i,j)]
@@ -238,3 +287,4 @@ class Program:
     scenarios: int = 1                                # R — how many are drawn
     scenario_seed: int = 1                            # the draw seed
     sources: dict = field(default_factory=dict)       # {name: Parametric | Empirical}
+    structures: dict = field(default_factory=dict)    # {name: PermutationDecl}

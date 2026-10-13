@@ -46,15 +46,18 @@ from math import inf
 import pyomo.environ as pyo
 
 from ._terms import _emit, _sum
-from .ir import (Const, Var, Apply, VarDecl, Program, SourceRef,
-                 Parametric, Empirical, CONTINUOUS, INTEGER, BINARY)
+from .ir import (Const, Var, Apply, VarDecl, Program, SourceRef, StructRef, TableRef,
+                 Parametric, Empirical, PermutationDecl, CONTINUOUS, INTEGER, BINARY)
 from .stochastic import _declarations
+from .structured import _declarations as _structured_declarations, _Part, _Lookup
 
 # The ops the service knows. A head outside this set raises — resolve it in the
-# service's catalog, do not paper over it here. The last four are the scenario
-# aggregators (see ``quicopt.stochastic``); ``max``/``min`` are Pyomo's own nodes.
+# service's catalog, do not paper over it here. ``smean`` to ``sfreq_geq`` are the
+# scenario aggregators (see ``quicopt.stochastic``); ``max``/``min`` are Pyomo's
+# own nodes; ``item_at``/``slot_of`` read a permutation (``quicopt.structured``).
 _CATALOG = {"+", "-", "*", "/", "^", "sin", "cos", "exp", "log", "sqrt", "abs",
-            "max", "min", "smean", "scvar", "sfreq_leq", "sfreq_geq"}
+            "max", "min", "smean", "scvar", "sfreq_leq", "sfreq_geq",
+            "item_at", "slot_of"}
 
 
 # ── Pyomo expression node → Quicopt Expression ──────────────────────────────
@@ -78,6 +81,11 @@ def _expr(node, var):
     """
     if isinstance(node, (int, float)):
         return Const(float(node))
+    if isinstance(node, _Part):                 # counted from 0 here, from 1 on the wire
+        part = _apply(node._head, [Const(float(node._position + 1)), StructRef(node._structure)])
+        return Apply("-", [part, Const(1.0)])
+    if isinstance(node, _Lookup):
+        return TableRef(node._table, [_one_based(_expr(a, var)) for a in node.args])
     if node.is_expression_type():
         head = node.getname()
         args = [_expr(a, var) for a in node.args]
@@ -117,6 +125,26 @@ def _apply(op, args):
         raise ValueError(f"operator {op!r} is not in the Quicopt operator catalog — "
                          "it must be added to the service before importing")
     return Apply(op, args)
+
+
+def _one_based(index):
+    """Shift a position counted from 0 to the wire's count from 1: ``index + 1``.
+
+    Undoes a ``− 1`` rather than stacking a ``+ 1`` on it, so a lookup at a
+    permutation's part, which reads ``item_at(…) − 1`` here, reaches the service
+    as ``item_at(…)``. The rewrite holds for any ``e − 1``, not only a part's.
+
+    Args:
+        index: The position expression, counted from 0.
+
+    Returns:
+        Expression: The same position, counted from 1.
+    """
+    if isinstance(index, Const):
+        return Const(index.value + 1.0)
+    if isinstance(index, Apply) and index.op == "-" and index.args[1] == Const(1.0):
+        return index.args[0]
+    return Apply("+", [index, Const(1.0)])
 
 
 def _nest(op, args):
@@ -193,6 +221,70 @@ def _source_decls(sources, scenarios, var):
     return decls
 
 
+def _structure_decls(structured):
+    """Build the ``Program``'s structure declarations from the model's registry,
+    shifting items and slots from the surface's count from 0 to the wire's from 1.
+
+    Args:
+        structured: The model's ``_Structured`` record.
+
+    Returns:
+        dict: ``name → PermutationDecl``, the ``Program.structures`` table.
+
+    Raises:
+        ValueError: If a start places an item after one it must follow.
+    """
+    decls = {}
+    for (name, perm) in structured.permutations.items():
+        for (before, after) in perm.precede:
+            if perm.start and perm.start[before] >= perm.start[after]:
+                raise ValueError(f"'{name}': the start places item {before} after item "
+                                 f"{after}, which it must precede")
+        decls[name] = PermutationDecl(perm.n, start=[s + 1 for s in perm.start],
+                                      precede=[(a + 1, b + 1) for (a, b) in perm.precede])
+    return decls
+
+
+def _table_params(structured):
+    """Build a parameter table for each lookup table, keyed by its positions
+    counted from 1, as the service reads them.
+
+    Args:
+        structured: The model's ``_Structured`` record.
+
+    Returns:
+        dict: ``name → {(i,): value}`` or ``name → {(i, j): value}``.
+    """
+    params = {}
+    for (name, values) in structured.tables.items():
+        if isinstance(values[0], list):
+            params[name] = {(i + 1, j + 1): x for (i, row) in enumerate(values)
+                            for (j, x) in enumerate(row)}
+        else:
+            params[name] = {(i + 1,): x for (i, x) in enumerate(values)}
+    return params
+
+
+def _check_names(structured, taken):
+    """Refuse a permutation or table whose name is already in use in the model.
+
+    The service reads every name as one thing — a decision variable, a random
+    variable, a structure or a table — so a clash would be refused there; here the
+    message can say which declaration to rename.
+
+    Args:
+        structured: The model's ``_Structured`` record.
+        taken: The names of the decision and random variables.
+
+    Raises:
+        ValueError: On the first clash.
+    """
+    for name in list(structured.permutations) + list(structured.tables):
+        if name in taken:
+            raise ValueError(f"the name '{name}' of a permutation or lookup table is also "
+                             "the name of a variable in this model; rename one of them")
+
+
 def import_model(m):
     """Convert a Pyomo ``ConcreteModel`` into a Quicopt ``Program``.
 
@@ -211,6 +303,11 @@ def import_model(m):
     *all* variables before the random ones are set aside, so which variables are
     random never renumbers the rest. A model that declares no uncertainty imports
     to exactly the ``Program`` it always did.
+
+    A permutation or lookup table (see ``quicopt.structured``) becomes a named
+    declaration in ``Program.structures`` or ``Program.params``. Its items, slots
+    and positions count from 0 in the model and from 1 in the ``Program``, which is
+    how the service counts them; the shift is made here.
     """
     declared = _declarations(m)
     sources = {} if declared is None else declared.sources
@@ -248,6 +345,12 @@ def import_model(m):
         ub = pyo.value(c.upper) if c.has_ub() else inf
         _emit(cons, _expr(c.body, var), lb, ub)
 
-    return Program(vars=vars, objective=objective, sense=sense, constraints=cons,
-                   scenarios=scenarios, scenario_seed=seed,
-                   sources=_source_decls(sources, scenarios, var))
+    structured = _structured_declarations(m)
+    structures, params = {}, {}
+    if structured is not None:
+        _check_names(structured, set(name.values()) | {n for (_, n, _) in sources.values()})
+        structures, params = _structure_decls(structured), _table_params(structured)
+
+    return Program(params=params, vars=vars, objective=objective, sense=sense,
+                   constraints=cons, scenarios=scenarios, scenario_seed=seed,
+                   sources=_source_decls(sources, scenarios, var), structures=structures)

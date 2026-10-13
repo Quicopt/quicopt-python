@@ -57,6 +57,19 @@ Example:
     print(job.status()["status"])                 # queued
     result = job.result(timeout=600)              # poll until done
     ```
+
+    The service decides how long a solve may run. ``time_limit`` sets it instead,
+    in seconds: a solver that proves its answer sooner still stops sooner, and a
+    search, which cannot prove it is done, runs for all of it:
+
+    ```python
+    result = Client().solve(m, time_limit=30)
+    print(result.solver_data["time_budget_s"])    # 30.0
+    ```
+
+    The service grants at most its maximum (120 s on the free tier). Asked for
+    more, it runs for its maximum, and the client warns that the solve got less
+    time than requested.
 """
 from __future__ import annotations
 
@@ -69,15 +82,17 @@ import time
 import urllib.error
 import urllib.request
 import warnings
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from urllib.parse import quote, urlencode
 
 from .ir import Program
 from .wire import encode
 
-__all__ = ["Client", "Job", "Result", "QuicoptError", "DEFAULT_BASE_URL", "KEY_PATH_ENV"]
+__all__ = ["Client", "Job", "Result", "Arrangement", "QuicoptError", "DEFAULT_BASE_URL",
+           "KEY_PATH_ENV"]
 
 _OCTET = "application/octet-stream"
 
@@ -155,13 +170,31 @@ def _write_key(path: Path, key: str) -> None:
             os.unlink(tmp)
 
 
+# How long a request may take beyond the solve itself — waiting in the queue,
+# reading the model, writing the answer — before the client stops waiting on a
+# solve whose time limit it set.
+_WAIT_MARGIN = 60.0
+
+
+@dataclass(frozen=True)
+class Arrangement:
+    """The arrangement the service found for one permutation (see
+    ``quicopt.structured``), both ways round and counted from 0: ``item_at[k]`` is
+    the item in slot ``k`` — for a route, the stops in the order visited — and
+    ``slot_of[i]`` the slot of item ``i``."""
+    item_at: List[int]
+    slot_of: List[int]
+
+
 @dataclass(frozen=True)
 class Result:
     """A finished solve, parsed from the service's result JSON. ``objective`` and
     ``feasible`` are ``None`` where the outcome leaves them undefined — a model
     with nothing to feasibility-check, or a run that found no solution.
     ``display`` is the framed, ready-to-print summary the service renders the same
-    way for every kind of model."""
+    way for every kind of model. ``structures`` holds the :class:`Arrangement` of
+    each permutation the model declares, by name, and is empty for a model with
+    none."""
     job_id: str
     status: str
     objective: Optional[float]
@@ -170,6 +203,7 @@ class Result:
     solve_time_seconds: float
     solver_data: Dict[str, Any]
     display: str
+    structures: Dict[str, Optional[Arrangement]] = field(default_factory=dict)
 
     @property
     def model_class(self) -> Optional[str]:
@@ -203,7 +237,69 @@ class Result:
             solve_time_seconds=d.get("solve_time_seconds", 0.0),
             solver_data=dict(d.get("solver_data") or {}),
             display=d.get("display", ""),
+            structures={name: _arrangement(s) for (name, s) in (d.get("structures") or {}).items()},
         )
+
+
+def _arrangement(s: Optional[Dict[str, Any]]) -> Optional[Arrangement]:
+    """Read one permutation's arrangement from the result JSON.
+
+    The service counts items and slots from 1; Python, and this client's
+    ``quicopt.structured``, from 0.
+
+    Args:
+        s: The JSON object with ``item_at`` and ``slot_of``, or ``None`` when no
+            solver returned an arrangement.
+
+    Returns:
+        The arrangement counted from 0, or ``None``.
+    """
+    if s is None:
+        return None
+    return Arrangement(item_at=[int(i) - 1 for i in s["item_at"]],
+                       slot_of=[int(k) - 1 for k in s["slot_of"]])
+
+
+def _warn_if_lowered(result: Result) -> Result:
+    """Warn when the service ran a solve for less time than its ``time_limit``.
+
+    The service grants at most its maximum and reports what it asked for and what
+    it granted side by side in ``solver_data``.
+
+    Args:
+        result: A finished solve.
+
+    Returns:
+        Result: ``result``, unchanged.
+    """
+    asked = result.solver_data.get("time_limit_s")
+    granted = result.solver_data.get("time_budget_s")
+    if asked is not None and granted is not None and granted < asked:
+        warnings.warn(f"the service ran this solve for {granted:g} s, not the {asked:g} s "
+                      f"asked for: {granted:g} s is the most it grants", stacklevel=3)
+    return result
+
+
+def _check_time_limit(time_limit: Optional[float]) -> Optional[float]:
+    """Check a time limit before it is sent.
+
+    Args:
+        time_limit: Seconds, or ``None`` to leave the choice to the service.
+
+    Returns:
+        The time limit as a float, or ``None``.
+
+    Raises:
+        TypeError: If it is not a number.
+        ValueError: If it is not positive and finite.
+    """
+    if time_limit is None:
+        return None
+    if isinstance(time_limit, bool) or not isinstance(time_limit, (int, float)):
+        raise TypeError(f"time_limit is a number of seconds, got {time_limit!r}")
+    if not (math.isfinite(time_limit) and time_limit > 0):
+        raise ValueError(f"time_limit is a positive, finite number of seconds, got {time_limit}")
+    return float(time_limit)
 
 
 class QuicoptError(Exception):
@@ -284,18 +380,20 @@ def _source_language(model: Any) -> Optional[str]:
     return None
 
 
-def _meta_config(model: Any, project: Optional[str],
+def _meta_config(model: Any, project: Optional[str], time_limit: Optional[float],
                  config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Merge the per-call metadata tags into the request config (sent as query
-    params): the auto-detected ``source_language`` (unless the caller already set
-    one in ``config``) and the optional ``project_id``. The model is unchanged —
-    these ride the query string, not the wire bytes."""
+    """Merge the per-call tags into the request config (sent as query params): the
+    auto-detected ``source_language`` (unless the caller already set one in
+    ``config``), the optional ``project_id`` and the optional ``time_limit``. The
+    model is unchanged — these ride the query string, not the wire bytes."""
     meta: Dict[str, Any] = dict(config or {})
     src = _source_language(model)
     if src is not None:
         meta.setdefault("source_language", src)
     if project is not None:
         meta["project_id"] = project
+    if time_limit is not None:
+        meta["time_limit"] = time_limit
     return meta
 
 
@@ -335,6 +433,7 @@ class Client:
         self._from_cache = self.api_key is not None and not self._explicit
 
     def solve(self, model: _Model, *, project: Optional[str] = None,
+              time_limit: Optional[float] = None,
               config: Optional[Dict[str, Any]] = None, gzip: bool = False) -> Result:
         """Solve ``model`` synchronously, blocking until the result returns.
 
@@ -344,6 +443,11 @@ class Client:
                 if you built them yourself.
             project: Optional project tag for the call, so calls on one key can be
                 invoiced per project. Sent as a query param, not baked into the model.
+            time_limit: Optional number of seconds the solve may run, in place of
+                the time the service would choose. A solver that proves its answer
+                sooner stops sooner; a search runs for all of it. The service grants
+                at most its maximum, and a warning says so when it granted less.
+                The client waits for the answer at least this long plus a minute.
             config: Optional service parameters, sent as the query string.
             gzip: If ``True``, gzip-compress the request body.
 
@@ -352,12 +456,18 @@ class Client:
 
         Raises:
             QuicoptError: On a non-2xx response.
+            TypeError: If ``time_limit`` is not a number.
+            ValueError: If ``time_limit`` is not positive and finite.
         """
-        return Result._from_json(
+        time_limit = _check_time_limit(time_limit)
+        wait = self.timeout if time_limit is None else max(self.timeout, time_limit + _WAIT_MARGIN)
+        return _warn_if_lowered(Result._from_json(
             self._request("POST", "/v1/solve", _to_wire(model),
-                          config=_meta_config(model, project, config), gzip=gzip))
+                          config=_meta_config(model, project, time_limit, config),
+                          gzip=gzip, timeout=wait)))
 
     def submit(self, model: _Model, *, project: Optional[str] = None,
+               time_limit: Optional[float] = None,
                config: Optional[Dict[str, Any]] = None, gzip: bool = False) -> "Job":
         """Submit ``model`` for asynchronous solving and return a handle to poll.
 
@@ -365,6 +475,9 @@ class Client:
             model: A Pyomo/MathOpt/PuLP model, a ``Program``, or encoded bytes.
             project: Optional project tag for the call (per-project invoicing), sent
                 as a query param, not baked into the model.
+            time_limit: Optional number of seconds the solve may run, as for
+                :meth:`solve`. :meth:`Job.result` then waits at least this long
+                plus a minute by default.
             config: Optional service parameters, sent as the query string.
             gzip: If ``True``, gzip-compress the request body.
 
@@ -373,11 +486,14 @@ class Client:
 
         Raises:
             QuicoptError: On a non-2xx response.
+            TypeError: If ``time_limit`` is not a number.
+            ValueError: If ``time_limit`` is not positive and finite.
         """
+        time_limit = _check_time_limit(time_limit)
         body = self._request("POST", "/v1/jobs", _to_wire(model),
-                             config=_meta_config(model, project, config), gzip=gzip)
+                             config=_meta_config(model, project, time_limit, config), gzip=gzip)
         self._remember(body.get("api_key"))     # /v1/jobs echoes a minted key in the 202 body too
-        return Job(self, body["job_id"])
+        return Job(self, body["job_id"], time_limit)
 
     # ── transport ───────────────────────────────────────────────────────────
 
@@ -398,7 +514,7 @@ class Client:
             method: The HTTP method.
             path: The path under ``base_url`` (e.g. ``/v1/solve``).
             data: The request body, or ``None`` for a bodyless request.
-            **kw: Forwarded to :meth:`_attempt` (``config``, ``gzip``).
+            **kw: Forwarded to :meth:`_attempt` (``config``, ``gzip``, ``timeout``).
 
         Returns:
             bytes: The raw response body.
@@ -415,7 +531,8 @@ class Client:
             return self._attempt(method, path, data, **kw)
 
     def _attempt(self, method: str, path: str, data: Optional[bytes] = None, *,
-                 config: Optional[Dict[str, Any]] = None, gzip: bool = False) -> bytes:
+                 config: Optional[Dict[str, Any]] = None, gzip: bool = False,
+                 timeout: Optional[float] = None) -> bytes:
         """Perform one HTTP request and return the raw response body.
 
         Sets the octet-stream content type (and gzip encoding, if requested) for a
@@ -429,6 +546,8 @@ class Client:
             data: The request body, or ``None`` for a bodyless request.
             config: Optional service parameters, sent as the query string.
             gzip: If ``True``, gzip-compress ``data``.
+            timeout: The socket timeout for this request, in seconds; ``None``
+                uses the client's.
 
         Returns:
             bytes: The raw response body.
@@ -447,7 +566,7 @@ class Client:
         req = urllib.request.Request(self.base_url + path + _query(config),
                                      data=data, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout or self.timeout) as resp:
                 self._capture_key(resp.headers)
                 return resp.read()
         except urllib.error.HTTPError as e:
@@ -461,7 +580,7 @@ class Client:
             method: The HTTP method.
             path: The path under ``base_url``.
             data: The request body, or ``None``.
-            **kw: Forwarded to :meth:`_open` (``config``, ``gzip``).
+            **kw: Forwarded to :meth:`_open` (``config``, ``gzip``, ``timeout``).
 
         Returns:
             dict: The parsed JSON object, or ``{}`` for an empty body.
@@ -542,9 +661,11 @@ def _decode(raw: bytes) -> Dict[str, Any]:
 
 @dataclass
 class Job:
-    """A handle to an async job. :meth:`result` polls until it finishes."""
+    """A handle to an async job. :meth:`result` polls until it finishes.
+    ``time_limit`` is the one the job was submitted with, if any."""
     client: Client
     job_id: str
+    time_limit: Optional[float] = None
 
     def status(self) -> Dict[str, Any]:
         """Fetch the job's metadata and framed ``log_tail``.
@@ -555,13 +676,15 @@ class Job:
         """
         return self.client._request("GET", f"/v1/jobs/{self.job_id}")
 
-    def result(self, *, wait: bool = True, timeout: float = 120.0, poll: float = 0.5) -> Result:
+    def result(self, *, wait: bool = True, timeout: Optional[float] = None,
+               poll: float = 0.5) -> Result:
         """Fetch the job's result, optionally polling until it is ready.
 
         Args:
             wait: If ``True``, poll past the service's ``not_done`` reason until the
                 worker finishes; if ``False``, fetch once.
-            timeout: Maximum time to poll, in seconds, before giving up.
+            timeout: Maximum time to poll, in seconds, before giving up. Defaults to
+                120 s, or the job's ``time_limit`` plus a minute when that is longer.
             poll: Delay between polls, in seconds.
 
         Returns:
@@ -571,11 +694,13 @@ class Job:
             QuicoptError: If ``wait`` is ``False`` and the job is not yet done, on
                 any non-``not_done`` error, or once ``timeout`` elapses.
         """
+        if timeout is None:
+            timeout = 120.0 if self.time_limit is None else max(120.0, self.time_limit + _WAIT_MARGIN)
         deadline = time.monotonic() + timeout
         while True:
             try:
-                return Result._from_json(
-                    self.client._request("GET", f"/v1/jobs/{self.job_id}/result"))
+                return _warn_if_lowered(Result._from_json(
+                    self.client._request("GET", f"/v1/jobs/{self.job_id}/result")))
             except QuicoptError as e:
                 if not wait or e.reason != "not_done" or time.monotonic() > deadline:
                     raise

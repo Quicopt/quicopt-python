@@ -15,11 +15,14 @@ import json
 import os
 import tempfile
 import threading
+import urllib.request
+import warnings
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-from quicopt import (Apply, Client, Const, Constraint, CONTINUOUS, DEFAULT_BASE_URL,
-                     Job, Nonneg, Program, QuicoptError, Var, VarDecl, encode)
+from quicopt import (Apply, Arrangement, Client, Const, Constraint, CONTINUOUS,
+                     DEFAULT_BASE_URL, Job, Nonneg, Program, QuicoptError, Var, VarDecl,
+                     encode)
 
 _KEY = "k" * 64
 _JOB = "job-1"
@@ -69,7 +72,7 @@ class _Stub(BaseHTTPRequestHandler):
         if srv.mode == "error":
             self._json(422, _ERROR, minted)
         elif self.path.startswith("/v1/solve"):
-            self._json(200, _RESULT, minted)
+            self._json(200, srv.result, minted)
         elif self.path.startswith("/v1/jobs"):
             self._json(202, {"job_id": _JOB, "status": "queued"}, minted)
         else:
@@ -82,7 +85,7 @@ class _Stub(BaseHTTPRequestHandler):
                 srv.gets += 1
                 self._json(409, {"reason": "not_done", "error": "job not done"})
             else:
-                self._json(200, _RESULT)
+                self._json(200, srv.result)
         elif "/jobs/" in self.path:
             self._json(200, {"job_id": _JOB, "status": "done"})
         else:
@@ -90,7 +93,7 @@ class _Stub(BaseHTTPRequestHandler):
 
 
 @contextlib.contextmanager
-def _serve(mode="ok", not_done_first=False, stale_key=None):
+def _serve(mode="ok", not_done_first=False, stale_key=None, result=None):
     """Run the stub and yield a client bound to it, plus the server for assertions.
 
     The client's key cache is redirected into a fresh temp directory: the suite must
@@ -100,6 +103,7 @@ def _serve(mode="ok", not_done_first=False, stale_key=None):
     srv = HTTPServer(("127.0.0.1", 0), _Stub)
     srv.mode, srv.not_done_first, srv.gets = mode, not_done_first, 0
     srv.stale_key, srv.mints = stale_key, 0
+    srv.result = _RESULT if result is None else result
     srv.last_body = srv.last_auth = srv.last_encoding = srv.last_path = None
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
@@ -151,10 +155,11 @@ def test_metadata_source_and_project():
     assert _source_language(_program()) is None
     assert _source_language(b"\x00") is None
 
-    # _meta_config merges auto source (unless overridden) + project
-    assert _meta_config(_program(), "proj-1", None) == {"project_id": "proj-1"}
-    assert _meta_config(fake("pyomo.environ"), None, None) == {"source_language": "pyomo"}
-    assert _meta_config(fake("pyomo.environ"), None, {"source_language": "x"})["source_language"] == "x"
+    # _meta_config merges auto source (unless overridden) + project + time limit
+    assert _meta_config(_program(), "proj-1", None, None) == {"project_id": "proj-1"}
+    assert _meta_config(fake("pyomo.environ"), None, None, None) == {"source_language": "pyomo"}
+    assert _meta_config(fake("pyomo.environ"), None, None, {"source_language": "x"})["source_language"] == "x"
+    assert _meta_config(_program(), None, 30.0, None) == {"time_limit": 30.0}
 
     # end-to-end: project rides the request query string (%-escaped), not the body
     prog = _program()
@@ -322,6 +327,88 @@ def test_result_polls_past_not_done():
         res = Job(client, _JOB).result(poll=0.01)
         assert res.objective == 4.0
         assert srv.gets == 1                             # one 409 not_done, then a 200
+
+
+def _raises(exc, fn, *args, **kwargs):
+    """Assert that ``fn(*args, **kwargs)`` raises ``exc``."""
+    try:
+        fn(*args, **kwargs)
+    except exc:
+        return
+    raise AssertionError(f"{fn.__name__} did not raise {exc.__name__}")
+
+
+def _timed_result(asked, granted):
+    """The stub's result for a solve the caller gave a time limit."""
+    return dict(_RESULT, solver_data=dict(_RESULT["solver_data"],
+                                          time_limit_s=asked, time_budget_s=granted))
+
+
+@contextlib.contextmanager
+def _socket_timeouts():
+    """Record the socket timeout of every request the client opens."""
+    seen, real = [], urllib.request.urlopen
+
+    def recording(req, timeout=None):
+        seen.append(timeout)
+        return real(req, timeout=timeout)
+    urllib.request.urlopen = recording
+    try:
+        yield seen
+    finally:
+        urllib.request.urlopen = real
+
+
+def test_time_limit_rides_the_query_and_widens_the_wait():
+    with _serve(result=_timed_result(90.0, 90.0)) as (client, srv), _socket_timeouts() as seen:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")                  # granted as asked: no warning
+            res = client.solve(_program(), time_limit=90)
+        assert "time_limit=90.0" in srv.last_path
+        assert res.solver_data["time_budget_s"] == 90.0
+        assert seen[-1] == 150.0                            # the time limit plus a minute
+        client.solve(_program())
+        assert "time_limit" not in srv.last_path
+        assert seen[-1] == 5.0                              # the client's own timeout
+
+
+def test_lowered_time_limit_warns():
+    with _serve(result=_timed_result(300.0, 120.0)) as (client, _srv):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            client.solve(_program(), time_limit=300)
+        assert len(caught) == 1
+        assert "120 s, not the 300 s asked for" in str(caught[0].message)
+
+
+def test_submitted_time_limit_reaches_the_job():
+    with _serve(result=_timed_result(300.0, 120.0)) as (client, srv):
+        job = client.submit(_program(), time_limit=300)
+        assert job.time_limit == 300.0 and "time_limit=300.0" in srv.last_path
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            job.result()
+        assert len(caught) == 1
+
+
+def test_time_limit_is_checked_before_sending():
+    client = Client("http://127.0.0.1:9", cache=False)
+    for bad in (0, -1.0, float("inf"), float("nan")):
+        _raises(ValueError, client.solve, _program(), time_limit=bad)
+    for bad in ("10", True):
+        _raises(TypeError, client.submit, _program(), time_limit=bad)
+
+
+def test_structures_count_from_zero():
+    result = dict(_RESULT, structures={"route": {"item_at": [4, 2, 5, 3, 1],
+                                                 "slot_of": [5, 2, 4, 1, 3]},
+                                       "lost": None})
+    with _serve(result=result) as (client, _srv):
+        res = client.solve(_program())
+    assert res.structures["route"] == Arrangement(item_at=[3, 1, 4, 2, 0], slot_of=[4, 1, 3, 0, 2])
+    assert res.structures["lost"] is None
+    with _serve() as (client, _srv):
+        assert client.solve(_program()).structures == {}
 
 
 if __name__ == "__main__":
