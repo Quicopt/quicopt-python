@@ -19,6 +19,9 @@ Data that depends on the arrangement, such as the distance between consecutive
 stops, is read from a [`lookup_table`][quicopt.structured.lookup_table]: indexing
 it with expressions gives the entry at the positions the service chooses.
 
+Both are declared on a Pyomo model. PuLP and OR-Tools MathOpt models hold only
+linear and quadratic terms, which cannot express either.
+
 Example:
     Five stops along a road. Find the shortest route through all of them that
     visits stop 3 before stop 0:
@@ -55,6 +58,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from numbers import Integral, Real
 
+from pyomo.core import Model, PyomoObject
 from pyomo.core.expr import numeric_expr as _ne
 
 __all__ = ["permutation", "Permutation", "lookup_table", "LookupTable"]
@@ -121,9 +125,10 @@ def _declare(model, name):
         _Structured: The record.
 
     Raises:
-        TypeError: If ``name`` is not a string.
+        TypeError: If ``model`` is not a Pyomo model, or ``name`` is not a string.
         ValueError: If ``name`` is empty or already declared.
     """
+    _check_model(model)
     if not isinstance(name, str) or not name:
         raise TypeError(f"a name is a non-empty string, got {name!r}")
     record = _declarations(model)
@@ -133,6 +138,30 @@ def _declare(model, name):
     if name in record.permutations or name in record.tables:
         raise ValueError(f"the name '{name}' is already declared on this model")
     return record
+
+
+def _check_model(model):
+    """Refuse a declaration on anything but a whole Pyomo model.
+
+    Args:
+        model: What the declaration is about to be recorded on.
+
+    Raises:
+        TypeError: If ``model`` is a block or another part of a Pyomo model, or
+            not a Pyomo object at all (a PuLP or MathOpt model, say).
+    """
+    # The importer reads declarations off the model it is handed and nowhere else,
+    # so one recorded on a block of that model would be silently lost.
+    if isinstance(model, Model):
+        return
+    if isinstance(model, PyomoObject):
+        raise TypeError("permutations and lookup tables are declared on the Pyomo model itself, "
+                        f"the one you solve, not on {type(model).__name__} "
+                        f"'{getattr(model, 'name', model)}' inside it")
+    raise TypeError("permutations and lookup tables are declared on a Pyomo model, such as a "
+                    f"pyo.ConcreteModel, not on {type(model).__module__}.{type(model).__name__}: "
+                    "PuLP and OR-Tools MathOpt models hold only linear and quadratic terms, which "
+                    "cannot express an order or an entry read at a position the service chooses")
 
 
 # ── expression nodes the service evaluates ──────────────────────────────────
@@ -380,7 +409,9 @@ def permutation(model, name, n, start=None):
     to constrain with ``precede``.
 
     Raises:
-        TypeError: If ``name`` is not a string or ``n`` not a whole number.
+        TypeError: If ``model`` is not a Pyomo model (a PuLP or MathOpt model, or
+            a block inside a Pyomo model, is refused), ``name`` is not a string or
+            ``n`` not a whole number.
         ValueError: If ``n`` is below 2, ``name`` is already declared on the model,
             or ``start`` is not an arrangement of ``0..n - 1``.
     """
@@ -462,7 +493,7 @@ class LookupTable:
 
         Raises:
             TypeError: If the number of indices does not match the table, or an
-                index is neither a whole number nor an expression.
+                index is neither a whole number nor a Pyomo expression.
             ValueError: If a whole-number index is outside the table.
         """
         shape = self.shape
@@ -477,8 +508,8 @@ class LookupTable:
                     raise ValueError(f"'{self._name}': a whole-number index runs from 0 to "
                                      f"{extent - 1}, got {k}")
             elif isinstance(k, (bool, Real)) or not hasattr(k, "is_potentially_variable"):
-                raise TypeError(f"'{self._name}': an index is a whole number or an "
-                                f"expression, got {k!r}")
+                raise TypeError(f"'{self._name}': an index is a whole number or a Pyomo "
+                                f"expression, got {type(k).__name__} {k!r}")
         if all(_is_whole(k) for k in key):
             entry = self._values
             for k in key:
@@ -507,7 +538,9 @@ def lookup_table(model, name, values):
     request large.
 
     Raises:
-        TypeError: If ``values`` is not one of the shapes above.
+        TypeError: If ``model`` is not a Pyomo model (a PuLP or MathOpt model, or
+            a block inside a Pyomo model, is refused), or ``values`` is not one of
+            the shapes above.
         ValueError: If it is empty, ragged or holds a NaN, or ``name`` is already
             declared.
     """

@@ -34,6 +34,15 @@ try:
 except ImportError:                                         # the extra is absent
     pyo = None
 
+try:
+    import pulp
+except ImportError:                                         # the [pulp] extra is absent
+    pulp = None
+try:
+    from ortools.math_opt.python import mathopt
+except ImportError:                                         # the [mathopt] extra is absent
+    mathopt = None
+
 
 def _route():
     """The running example: five stops on a road, stop 3 visited before stop 0."""
@@ -222,6 +231,38 @@ def test_table_arguments_are_checked():
     _raises(ValueError, t.__getitem__, (0, 2))
     _raises(TypeError, t.__getitem__, (0, 0.5))
     assert t[1, 0] == 3.0
+
+
+def test_only_a_whole_pyomo_model_holds_them():
+    """A PuLP or MathOpt model, or a block inside a Pyomo model, is refused when
+    the declaration is made, with a message that says why."""
+    if _skip("test_only_a_whole_pyomo_model_holds_them"):
+        return
+    others = ([pulp.LpProblem("p", pulp.LpMinimize)] if pulp else []) + \
+             ([mathopt.Model(name="m")] if mathopt else [])
+    if not others:
+        print("skip  the PuLP and MathOpt cases (need the [pulp] or [mathopt] extra)")
+    for other in others:
+        for message in (_raises(TypeError, permutation, other, "route", 3),
+                        _raises(TypeError, lookup_table, other, "t", [1.0, 2.0])):
+            assert "Pyomo model" in message and type(other).__name__ in message, message
+    m = pyo.ConcreteModel()
+    m.depot = pyo.Block()
+    assert "model itself" in _raises(TypeError, permutation, m.depot, "route", 3)
+    assert "model itself" in _raises(TypeError, lookup_table, m.depot, "t", [1.0, 2.0])
+
+
+def test_an_index_from_another_library_is_named():
+    """Indexing a table with a PuLP variable says the index must be a Pyomo one."""
+    if _skip("test_an_index_from_another_library_is_named"):
+        return
+    if pulp is None:
+        print("skip  test_an_index_from_another_library_is_named (needs the [pulp] extra)")
+        return
+    m = pyo.ConcreteModel()
+    t = lookup_table(m, "t", [1.0, 2.0, 3.0])
+    message = _raises(TypeError, t.__getitem__, pulp.LpVariable("k", 0, 2, cat="Integer"))
+    assert "Pyomo expression" in message and "LpVariable" in message, message
 
 
 def test_names_must_not_clash_with_variables():
