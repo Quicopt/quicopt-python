@@ -118,8 +118,9 @@ def _stoch_empirical():                                     # both source kinds 
 
 def _distances(coords):
     """The dense distance table between points on a line, keyed from 1."""
-    n = len(coords)
-    return {(i + 1, j + 1): float(abs(coords[i] - coords[j])) for i in range(n) for j in range(n)}
+    n_points = len(coords)
+    return {(i + 1, j + 1): float(abs(coords[i] - coords[j]))
+            for i in range(n_points) for j in range(n_points)}
 
 
 def _struct_tour():                                         # every StructureDecl field, 2-D lookup
