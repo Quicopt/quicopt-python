@@ -54,7 +54,7 @@ Example:
     variables (``quicopt.stochastic``), for example a route whose travel times are
     uncertain, minimized in expectation.
 
-Minimum loads, fees and blocks:
+Minimum loads and fees:
     A delivery is often either nothing or at least a minimum load: a truck does
     not go out for two units. [`semiinteger`][quicopt.structured.semiinteger]
     marks an integer variable so that it is 0 or a whole number within its
