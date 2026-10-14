@@ -74,7 +74,7 @@ nav:
       - wire — the encoder: api/wire.md
       - pyomo — read a Pyomo model: api/pyomo.md
       - stochastic — models under uncertainty: api/stochastic.md
-      - structured — orders, groups, minimum loads and fees: api/structured.md
+      - structured — orderings, groups, minimum loads and fees: api/structured.md
       - mathopt — read a MathOpt model: api/mathopt.md
       - pulp — read a PuLP model: api/pulp.md
       - client — send it, read the result: api/client.md

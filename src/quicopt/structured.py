@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: (c) 2026 Tim Bode, PGI-12, Forschungszentrum Jülich
 """
-quicopt.structured — orders, groups, minimum loads and fees, written in Pyomo.
+quicopt.structured — orderings, groups, minimum loads and fees, written in Pyomo.
 
-Some decisions are an order: the order in which a courier visits its stops, the
-order of jobs on a machine, which department moves into which office. Each is a
-*permutation*: ``n`` things, called *items*, placed in ``n`` numbered places,
-called *slots*, one item per slot. For a route the items are the stops and the
-slots are the visits, so slot 0 holds the first stop visited.
+Some decisions are an ordering, such as the stops of a courier's route or the
+jobs on a machine, or a one-to-one assignment, such as which department moves
+into which office. Each is a *permutation*: ``n`` things, called *items*, placed
+in as many numbered places, called *slots*, one item per slot. For a route the
+items are the stops and the slots are the visits, so slot 0 holds the first stop
+visited.
 
 [`permutation`][quicopt.structured.permutation] declares one on a Pyomo model.
 Its [`item_at`][quicopt.structured.Permutation.item_at] is the item in a slot and
@@ -53,7 +54,7 @@ Example:
     variables (``quicopt.stochastic``), for example a route whose travel times are
     uncertain, minimized in expectation.
 
-Minimum loads, fees and blocks:
+Minimum loads and fees:
     A delivery is often either nothing or at least a minimum load: a truck does
     not go out for two units. [`semiinteger`][quicopt.structured.semiinteger]
     marks an integer variable so that it is 0 or a whole number within its
@@ -464,8 +465,8 @@ class _Active(_Decided):
 # ── permutations ────────────────────────────────────────────────────────────
 
 class Permutation:
-    """A permutation declared by :func:`permutation`: ``n`` items in ``n`` slots,
-    both counted from 0."""
+    """A permutation declared by :func:`permutation`: ``n`` items in as many
+    slots, both counted from 0."""
 
     def __init__(self, name, record):
         """Wrap the declaration ``record`` of the permutation ``name``; use
@@ -565,8 +566,8 @@ class Permutation:
 
 
 def permutation(model, name, n, start=None):
-    """Declare an order as a decision: a permutation of ``n`` items over ``n``
-    slots on the Pyomo model ``model``.
+    """Declare an ordering as a decision: a permutation of ``n`` items over as
+    many slots, on the Pyomo model ``model``.
 
     ``name`` identifies the permutation in the result, as
     ``result.structures[name]``. ``n`` is at least 2.
@@ -813,9 +814,10 @@ def lookup_table(model, name, values):
     """Declare a table of data that can be indexed by decisions.
 
     A model sometimes needs a number from a table at a position that is not known
-    yet: the distance between the first and the second stop of a route whose order
-    the service is still choosing, or the price of an option an integer variable
-    picks. A Python list cannot be indexed this way; the table returned here can.
+    yet: the distance between the first and the second stop of a route whose
+    ordering the service is still choosing, or the price of an option an integer
+    variable picks. A Python list cannot be indexed this way; the table returned
+    here can.
 
     ``values`` is a sequence of numbers (a table of one dimension) or a sequence of
     equally long sequences of numbers (two dimensions), such as a list of lists or
