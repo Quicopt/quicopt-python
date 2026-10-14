@@ -123,11 +123,11 @@ class _Stochastic:
             unhashable (``==`` builds an expression rather than answering), so
             identity is the key; the variable is kept beside it both to hold that
             identity valid and to let the importer read its bounds.
-        scenarios: How many scenarios are drawn.
+        n_scenarios: How many scenarios are drawn.
         seed: The seed they are drawn from.
     """
     sources: dict
-    scenarios: int
+    n_scenarios: int
     seed: int
 
 
@@ -232,28 +232,28 @@ def set_distribution(model, v, dist, name=None):
     return v
 
 
-def set_scenarios(model, n, seed=None):
-    """Draw ``n`` scenarios, optionally from a given ``seed``.
+def set_scenarios(model, n_scenarios, seed=None):
+    """Draw ``n_scenarios`` scenarios, optionally from a given ``seed``.
 
     More scenarios estimate the true problem more closely and cost more to solve.
     Both settings belong to the model, not to the solve, so the same model always
     faces the same sample and two solves of it are comparable. Left unset, a model
     is solved over one scenario, where every random variable takes a single value.
 
-    ``n`` and ``seed`` are both at least 1. Leaving ``seed`` out keeps the current
-    one.
+    ``n_scenarios`` and ``seed`` are both at least 1. Leaving ``seed`` out keeps
+    the current one.
 
     Raises:
         TypeError: If ``model`` is not a Pyomo model (a PuLP or MathOpt model, or
             a block inside a Pyomo model, is refused).
-        ValueError: If ``n`` or ``seed`` is below 1.
+        ValueError: If ``n_scenarios`` or ``seed`` is below 1.
     """
     # 0 is rejected rather than defaulted: protobuf cannot tell a zero from an absent
     # field, so a 0 sent here would arrive at the service as "use your default".
-    if n < 1:
-        raise ValueError(f"a model is solved over at least 1 scenario, got {n}")
+    if n_scenarios < 1:
+        raise ValueError(f"a model is solved over at least 1 scenario, got {n_scenarios}")
     record = _declare(model)
-    record.scenarios = int(n)
+    record.n_scenarios = int(n_scenarios)
     if seed is not None:
         if seed < 1:
             raise ValueError(f"the scenario seed must be at least 1, got {seed}")

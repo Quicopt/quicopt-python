@@ -5,10 +5,10 @@ quicopt.structured — orderings, groups, minimum loads and fees, written in Pyo
 
 Some decisions are an ordering, such as the stops of a courier's route or the
 jobs on a machine, or a one-to-one assignment, such as which department moves
-into which office. Each is a *permutation*: ``n`` things, called *items*, placed
-in as many numbered places, called *slots*, one item per slot. For a route the
-items are the stops and the slots are the visits, so slot 0 holds the first stop
-visited.
+into which office. Each is a *permutation*: things, called *items*, placed in
+numbered places, called *slots*, one item per slot and one slot per item. For a
+route the items are the stops and the slots are the visits, so slot 0 holds the
+first stop visited.
 
 [`permutation`][quicopt.structured.permutation] declares one on a Pyomo model.
 Its [`item_at`][quicopt.structured.Permutation.item_at] is the item in a slot and
@@ -166,12 +166,12 @@ class _PermutationRecord:
     """One declared permutation, counted from 0 as the user wrote it.
 
     Attributes:
-        n: How many items, and so how many slots.
+        n_items: How many items, and so how many slots.
         start: The starting slot of each item, or empty for the default (item
             ``i`` in slot ``i``).
         precede: ``(before, after)`` item pairs, in the order they were given.
     """
-    n: int
+    n_items: int
     start: list
     precede: list = field(default_factory=list)
 
@@ -181,12 +181,12 @@ class _PartitionRecord:
     """One declared partition, counted from 0 as the user wrote it.
 
     Attributes:
-        n: How many items.
-        parts: How many parts.
+        n_items: How many items.
+        n_parts: How many parts.
         start: The starting part of each item, or empty for the service's default.
     """
-    n: int
-    parts: int
+    n_items: int
+    n_parts: int
     start: list
 
 
@@ -465,8 +465,8 @@ class _Active(_Decided):
 # ── permutations ────────────────────────────────────────────────────────────
 
 class Permutation:
-    """A permutation declared by :func:`permutation`: ``n`` items in as many
-    slots, both counted from 0."""
+    """A permutation declared by :func:`permutation`: items in as many slots,
+    both counted from 0."""
 
     def __init__(self, name, record):
         """Wrap the declaration ``record`` of the permutation ``name``; use
@@ -480,9 +480,9 @@ class Permutation:
         return self._name
 
     @property
-    def n(self):
+    def n_items(self):
         """How many items, and so how many slots."""
-        return self._record.n
+        return self._record.n_items
 
     def item_at(self, slot):
         """The item in slot ``slot``, an expression whose value the service chooses.
@@ -490,11 +490,11 @@ class Permutation:
         For a route whose items are stops, ``route.item_at(0)`` is the first stop
         visited. Index a :class:`LookupTable` with it to read data about that item.
 
-        ``slot`` is a whole number from 0 to ``n - 1``.
+        ``slot`` is a whole number from 0 to ``n_items - 1``.
 
         Raises:
             TypeError: If ``slot`` is not a whole number.
-            ValueError: If ``slot`` is outside ``0..n - 1``.
+            ValueError: If ``slot`` is outside ``0..n_items - 1``.
         """
         return _Part("item_at", self._name, self._position(slot, "slot", "item_at"))
 
@@ -505,11 +505,11 @@ class Permutation:
         For a route whose items are stops, ``route.slot_of(2)`` is when stop 2 is
         visited.
 
-        ``item`` is a whole number from 0 to ``n - 1``.
+        ``item`` is a whole number from 0 to ``n_items - 1``.
 
         Raises:
             TypeError: If ``item`` is not a whole number.
-            ValueError: If ``item`` is outside ``0..n - 1``.
+            ValueError: If ``item`` is outside ``0..n_items - 1``.
         """
         return _Part("slot_of", self._name, self._position(item, "item", "slot_of"))
 
@@ -523,15 +523,15 @@ class Permutation:
 
         Raises:
             TypeError: If an item is not a whole number.
-            ValueError: If an item is outside ``0..n - 1``, the two are the same
-                item, or the requirement contradicts the ones already given.
+            ValueError: If an item is outside ``0..n_items - 1``, the two are the
+                same item, or the requirement contradicts the ones already given.
         """
         a = self._position(before, "item", "precede")
         b = self._position(after, "item", "precede")
         if a == b:
             raise ValueError("an item cannot precede itself")
         edges = self._record.precede + [(a, b)]
-        if _has_cycle(edges, self.n):
+        if _has_cycle(edges, self.n_items):
             raise ValueError(f"requiring {a} before {b} contradicts the requirements already "
                              f"given for '{self._name}'")
         self._record.precede.append((a, b))
@@ -550,31 +550,32 @@ class Permutation:
 
         Raises:
             TypeError: If ``k`` is not a whole number.
-            ValueError: If ``k`` is outside ``0..n - 1``.
+            ValueError: If ``k`` is outside ``0..n_items - 1``.
         """
         if not _is_whole(k):
             raise TypeError(f"{caller}: a {what} is a whole number, got {k!r}")
-        if not 0 <= k < self.n:
-            raise ValueError(f"{caller}: '{self._name}' has {what}s 0 to {self.n - 1}, got {k}")
+        if not 0 <= k < self.n_items:
+            raise ValueError(f"{caller}: '{self._name}' has {what}s 0 to {self.n_items - 1}, "
+                             f"got {k}")
         return int(k)
 
     def __repr__(self):
         """A short description: name, size and how many precedences."""
         k = len(self._record.precede)
         extra = f", {k} precedence{'s' if k != 1 else ''}" if k else ""
-        return f"<permutation '{self._name}': {self.n} items in {self.n} slots{extra}>"
+        return f"<permutation '{self._name}': {self.n_items} items in {self.n_items} slots{extra}>"
 
 
-def permutation(model, name, n, start=None):
-    """Declare an ordering as a decision: a permutation of ``n`` items over as
-    many slots, on the Pyomo model ``model``.
+def permutation(model, name, n_items, start=None):
+    """Declare an ordering as a decision: a permutation of ``n_items`` items over
+    as many slots, on the Pyomo model ``model``.
 
     ``name`` identifies the permutation in the result, as
-    ``result.structures[name]``. ``n`` is at least 2.
+    ``result.structures[name]``. ``n_items`` is at least 2.
 
     ``start`` is the arrangement the service's search starts from: ``start[i]`` is
-    the slot of item ``i``, so it holds each of ``0..n - 1`` once. Left out, item
-    ``i`` starts in slot ``i``.
+    the slot of item ``i``, so it holds each of ``0..n_items - 1`` once. Left out,
+    item ``i`` starts in slot ``i``.
 
     Returns the :class:`Permutation`, to read with ``item_at`` and ``slot_of`` and
     to constrain with ``precede``.
@@ -582,21 +583,21 @@ def permutation(model, name, n, start=None):
     Raises:
         TypeError: If ``model`` is not a Pyomo model (a PuLP or MathOpt model, or
             a block inside a Pyomo model, is refused), ``name`` is not a string or
-            ``n`` not a whole number.
-        ValueError: If ``n`` is below 2, ``name`` is already declared on the model,
-            or ``start`` is not an arrangement of ``0..n - 1``.
+            ``n_items`` not a whole number.
+        ValueError: If ``n_items`` is below 2, ``name`` is already declared on the
+            model, or ``start`` is not an arrangement of ``0..n_items - 1``.
     """
-    if not _is_whole(n):
-        raise TypeError(f"a permutation has a whole number of items, got {n!r}")
-    if n < 2:
-        raise ValueError(f"a permutation has at least 2 items, got {n}")
-    n = int(n)
+    if not _is_whole(n_items):
+        raise TypeError(f"a permutation has a whole number of items, got {n_items!r}")
+    if n_items < 2:
+        raise ValueError(f"a permutation has at least 2 items, got {n_items}")
+    n_items = int(n_items)
     start = [] if start is None else list(start)
-    if start and not (all(_is_whole(s) for s in start) and sorted(start) == list(range(n))):
-        raise ValueError(f"'{name}': start must hold each of 0 to {n - 1} once "
+    if start and not (all(_is_whole(s) for s in start) and sorted(start) == list(range(n_items))):
+        raise ValueError(f"'{name}': start must hold each of 0 to {n_items - 1} once "
                          "(start[i] is the slot item i starts in)")
     record = _declare(model, name)
-    perm = _PermutationRecord(n, [int(s) for s in start])
+    perm = _PermutationRecord(n_items, [int(s) for s in start])
     record.permutations[name] = perm
     return Permutation(name, perm)
 
@@ -604,8 +605,8 @@ def permutation(model, name, n, start=None):
 # ── partitions ──────────────────────────────────────────────────────────────
 
 class Partition:
-    """A partition declared by :func:`partition`: ``n`` items in ``parts`` parts,
-    both counted from 0."""
+    """A partition declared by :func:`partition`: items split into parts, both
+    counted from 0."""
 
     def __init__(self, name, record):
         """Wrap the declaration ``record`` of the partition ``name``; use
@@ -619,41 +620,43 @@ class Partition:
         return self._name
 
     @property
-    def n(self):
+    def n_items(self):
         """How many items."""
-        return self._record.n
+        return self._record.n_items
 
     @property
-    def parts(self):
+    def n_parts(self):
         """How many parts."""
-        return self._record.parts
+        return self._record.n_parts
 
     def part_of(self, item):
         """The part item ``item`` is in, an expression whose value the service
-        chooses, from 0 to ``parts - 1``.
+        chooses, from 0 to ``n_parts - 1``.
 
         For people split into teams, ``teams.part_of(2)`` is the team of person 2.
         Index a :class:`LookupTable` with it to read data about that part.
 
         Raises:
             TypeError: If ``item`` is not a whole number.
-            ValueError: If ``item`` is outside ``0..n - 1``.
+            ValueError: If ``item`` is outside ``0..n_items - 1``.
         """
-        return _Part("part_of", self._name, _position(self, item, self.n, "item", "part_of"))
+        return _Part("part_of", self._name,
+                     _position(self, item, self.n_items, "item", "part_of"))
 
     def size_of(self, part):
         """How many items part ``part`` holds, an expression whose value the
-        service chooses, from 0 to ``n``.
+        service chooses, from 0 to ``n_items``.
 
         Raises:
             TypeError: If ``part`` is not a whole number.
-            ValueError: If ``part`` is outside ``0..parts - 1``.
+            ValueError: If ``part`` is outside ``0..n_parts - 1``.
         """
-        return _Part("size_of", self._name, _position(self, part, self.parts, "part", "size_of"))
+        return _Part("size_of", self._name,
+                     _position(self, part, self.n_parts, "part", "size_of"))
 
     def __repr__(self):
         """A short description: name, items and parts."""
-        return f"<partition '{self._name}': {self.n} items in {self.parts} parts>"
+        return f"<partition '{self._name}': {self.n_items} items in {self.n_parts} parts>"
 
 
 def _position(structure, k, extent, what, caller):
@@ -680,10 +683,10 @@ def _position(structure, k, extent, what, caller):
     return int(k)
 
 
-def partition(model, name, n, parts, start=None):
-    """Declare a split of ``n`` items into ``parts`` parts as a decision, on the
-    Pyomo model ``model``: every item goes into exactly one part, and a part may
-    stay empty.
+def partition(model, name, n_items, n_parts, start=None):
+    """Declare a split of ``n_items`` items into ``n_parts`` parts as a decision,
+    on the Pyomo model ``model``: every item goes into exactly one part, and a part
+    may stay empty.
 
     People into teams, jobs onto machines, products into warehouses: in each, the
     model reads the part an item is in through :meth:`Partition.part_of` and how
@@ -691,48 +694,51 @@ def partition(model, name, n, parts, start=None):
     count from 0.
 
     ``name`` identifies the partition in the result, as
-    ``result.structures[name]``, a :class:`~quicopt.client.Grouping`. ``n`` is at
-    least 1 and ``parts`` at least 2. ``start`` is the split the service's search
-    starts from: ``start[i]`` is the part of item ``i``. Left out, the service
-    deals the items out over the parts in turn.
+    ``result.structures[name]``, a :class:`~quicopt.client.Grouping`. ``n_items``
+    is at least 1 and ``n_parts`` at least 2. ``start`` is the split the service's
+    search starts from: ``start[i]`` is the part of item ``i``. Left out, the
+    service deals the items out over the parts in turn.
 
     Raises:
         TypeError: If ``model`` is not a Pyomo model, ``name`` is not a string, or
-            ``n`` or ``parts`` is not a whole number.
-        ValueError: If ``n`` is below 1 or ``parts`` below 2, ``name`` is already
-            declared on the model, or ``start`` does not give each item a part.
+            ``n_items`` or ``n_parts`` is not a whole number.
+        ValueError: If ``n_items`` is below 1 or ``n_parts`` below 2, ``name`` is
+            already declared on the model, or ``start`` does not give each item a
+            part.
     """
-    for (what, k, least) in (("items", n, 1), ("parts", parts, 2)):
+    for (what, k, least) in (("items", n_items, 1), ("parts", n_parts, 2)):
         if not _is_whole(k):
             raise TypeError(f"a partition has a whole number of {what}, got {k!r}")
         if k < least:
             raise ValueError(f"a partition has at least {least} {what[:-1] if least == 1 else what}, got {k}")
-    n, parts = int(n), int(parts)
+    n_items, n_parts = int(n_items), int(n_parts)
     start = [] if start is None else list(start)
-    if start and not (len(start) == n and all(_is_whole(b) and 0 <= b < parts for b in start)):
-        raise ValueError(f"'{name}': start gives each of the {n} items a part from 0 to "
-                         f"{parts - 1} (start[i] is the part item i starts in)")
+    if start and not (len(start) == n_items
+                      and all(_is_whole(b) and 0 <= b < n_parts for b in start)):
+        raise ValueError(f"'{name}': start gives each of the {n_items} items a part from 0 to "
+                         f"{n_parts - 1} (start[i] is the part item i starts in)")
     record = _declare(model, name)
-    decl = _PartitionRecord(n, parts, [int(b) for b in start])
+    decl = _PartitionRecord(n_items, n_parts, [int(b) for b in start])
     record.partitions[name] = decl
     return Partition(name, decl)
 
 
-def _has_cycle(edges, n):
-    """Whether ``(before, after)`` requirements over items ``0..n - 1`` contradict
-    each other: Kahn's algorithm leaves an item unplaced exactly when they do.
+def _has_cycle(edges, n_items):
+    """Whether ``(before, after)`` requirements over items ``0..n_items - 1``
+    contradict each other: Kahn's algorithm leaves an item unplaced exactly when
+    they do.
 
     Args:
         edges: The requirements, as ``(before, after)`` pairs.
-        n: How many items.
+        n_items: How many items.
 
     Returns:
         bool: True if the requirements contain a cycle.
     """
-    indegree = [0] * n
+    indegree = [0] * n_items
     for (_, b) in edges:
         indegree[b] += 1
-    ready = [i for i in range(n) if indegree[i] == 0]
+    ready = [i for i in range(n_items) if indegree[i] == 0]
     placed = 0
     while ready:
         x = ready.pop()
@@ -742,7 +748,7 @@ def _has_cycle(edges, n):
                 indegree[b] -= 1
                 if indegree[b] == 0:
                     ready.append(b)
-    return placed < n
+    return placed < n_items
 
 
 # ── lookup tables ───────────────────────────────────────────────────────────
