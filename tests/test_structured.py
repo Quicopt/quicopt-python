@@ -206,6 +206,8 @@ def test_permutation_arguments_are_checked():
     _raises(ValueError, p.precede, 1, 1)
     p.precede(0, 1).precede(1, 2)
     assert "contradicts" in _raises(ValueError, p.precede, 2, 0)
+    q = permutation(m, "q", n_items=4)
+    assert (q.n_items, repr(q)) == (4, "<permutation 'q': 4 items in 4 slots>"), repr(q)
 
 
 def test_start_must_respect_the_precedences():

@@ -240,7 +240,7 @@ def _check_source(v, name):
                          "declare it as pyo.Var() and nothing more")
 
 
-def _source_decls(sources, scenarios, var):
+def _source_decls(sources, n_scenarios, var):
     """Build the ``Program``'s source declarations from the model's registry.
 
     A parametric distribution's parameters are ordinary deterministic expressions
@@ -249,7 +249,7 @@ def _source_decls(sources, scenarios, var):
 
     Args:
         sources: The registry ``id(vardata) → (vardata, name, spec)``.
-        scenarios: The model's scenario count, which every column must match.
+        n_scenarios: The model's scenario count, which every column must match.
         var: The variable-mapping closure, for walking distribution parameters.
 
     Returns:
@@ -261,9 +261,9 @@ def _source_decls(sources, scenarios, var):
     decls = {}
     for (_, name, spec) in sources.values():
         if isinstance(spec, Empirical):
-            if len(spec.data) != scenarios:
+            if len(spec.data) != n_scenarios:
                 raise ValueError(f"the scenario column for '{name}' has {len(spec.data)} "
-                                 f"values, but the model is solved over {scenarios} "
+                                 f"values, but the model is solved over {n_scenarios} "
                                  "scenarios — a column carries one value per scenario")
             decls[name] = Empirical([float(x) for x in spec.data])
         else:
@@ -292,10 +292,11 @@ def _structure_decls(structured):
             if perm.start and perm.start[before] >= perm.start[after]:
                 raise ValueError(f"'{name}': the start places item {before} after item "
                                  f"{after}, which it must precede")
-        decls[name] = PermutationDecl(perm.n, start=[s + 1 for s in perm.start],
+        decls[name] = PermutationDecl(perm.n_items, start=[s + 1 for s in perm.start],
                                       precede=[(a + 1, b + 1) for (a, b) in perm.precede])
     for (name, part) in structured.partitions.items():
-        decls[name] = PartitionDecl(part.n, part.parts, start=[b + 1 for b in part.start])
+        decls[name] = PartitionDecl(part.n_items, part.n_parts,
+                                    start=[b + 1 for b in part.start])
     return decls
 
 
@@ -427,7 +428,7 @@ def import_model(m):
     structured = _structured_declarations(m)
     holes = {} if structured is None else structured.holes
     sources = {} if declared is None else declared.sources
-    scenarios = 1 if declared is None else declared.scenarios
+    n_scenarios = 1 if declared is None else declared.n_scenarios
     seed = 1 if declared is None else declared.seed
 
     vis = list(m.component_data_objects(pyo.Var))
@@ -468,11 +469,12 @@ def import_model(m):
 
     structures, params, blocks = {}, {}, {}
     if structured is not None:
-        _check_names(structured, set(name.values()) | {n for (_, n, _) in sources.values()})
+        _check_names(structured, set(name.values())
+                     | {source_name for (_, source_name, _) in sources.values()})
         structures, params = _structure_decls(structured), _table_params(structured)
         blocks = _blocks(structured, name, sources)
 
     return Program(params=params, vars=vars, objective=objective, sense=sense,
-                   constraints=cons, scenarios=scenarios, scenario_seed=seed,
-                   sources=_source_decls(sources, scenarios, var), structures=structures,
+                   constraints=cons, scenarios=n_scenarios, scenario_seed=seed,
+                   sources=_source_decls(sources, n_scenarios, var), structures=structures,
                    blocks=blocks)

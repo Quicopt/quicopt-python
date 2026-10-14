@@ -267,10 +267,10 @@ def _structure(s: Optional[Dict[str, Any]]) -> Union[Arrangement, Grouping, None
     if s is None:
         return None
     if "part_of" in s:
-        return Grouping(part_of=[int(b) - 1 for b in s["part_of"]],
-                        size_of=[int(n) for n in s["size_of"]])
-    return Arrangement(item_at=[int(i) - 1 for i in s["item_at"]],
-                       slot_of=[int(k) - 1 for k in s["slot_of"]])
+        return Grouping(part_of=[int(part) - 1 for part in s["part_of"]],
+                        size_of=[int(size) for size in s["size_of"]])
+    return Arrangement(item_at=[int(item) - 1 for item in s["item_at"]],
+                       slot_of=[int(slot) - 1 for slot in s["slot_of"]])
 
 
 def _warn_if_lowered(result: Result) -> Result:

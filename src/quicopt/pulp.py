@@ -112,7 +112,7 @@ def import_model(prob):
     vars = [_decl(v) for v in prob.variables()]
     names = [d.name for d in vars]
     if len(set(names)) != len(names):
-        dup = sorted({n for n in names if names.count(n) > 1})
+        dup = sorted({name for name in names if names.count(name) > 1})
         raise ValueError(f"PuLP variable names are not unique: {dup} — distinct variables "
                          "sharing a name would merge into one; rename them")
 

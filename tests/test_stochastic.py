@@ -138,7 +138,7 @@ def test_empirical_column_travels_as_data():
     m = pyo.ConcreteModel()
     m.x = pyo.Var(bounds=(0, 100))
     m.shock = pyo.Var()
-    set_scenarios(m, 4)
+    set_scenarios(m, n_scenarios=4)
     set_distribution(m, m.shock, Empirical([0.9, 1.0, 1.1, 1.3]))
     m.o = pyo.Objective(expr=expectation(m.shock * m.x), sense=pyo.minimize)
     p = import_model(m)

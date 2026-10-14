@@ -232,6 +232,8 @@ def test_partition_arguments_are_checked():
     assert "0 to 2" in _raises(ValueError, p.part_of, 3)
     assert "0 to 1" in _raises(ValueError, p.size_of, 2)
     assert "whole number" in _raises(TypeError, p.part_of, 1.0)
+    q = partition(m, "q", n_items=4, n_parts=3)
+    assert (q.n_items, q.n_parts, repr(q)) == (4, 3, "<partition 'q': 4 items in 3 parts>"), repr(q)
 
 
 def test_expr_if_becomes_a_step_or_an_indicator():
