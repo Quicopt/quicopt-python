@@ -76,9 +76,9 @@ sooner, and a search runs for all of it. The service grants at most its maximum
 (120 s on the free tier), and the client warns when a solve got less time than
 asked for.
 
-### Orders, groups, minimum loads and fees
+### Orderings, groups, minimum loads and fees
 
-`quicopt.structured` adds decisions that Pyomo has no word for: an order (a
+`quicopt.structured` adds decisions that Pyomo has no word for: an ordering (a
 route, a schedule), a split of items into groups (people into teams), and a
 variable that is either 0 or within its bounds (a delivery of none, or of 10 to
 25 units). `active(x)` is 1 when such a variable is not 0, which turns a fixed
@@ -134,7 +134,7 @@ quicopt/pyomo.py      a Pyomo model → a Quicopt model
 quicopt/mathopt.py    an OR-Tools MathOpt model → a Quicopt model
 quicopt/pulp.py       a PuLP model → a Quicopt model
 quicopt/stochastic.py writing a Pyomo model whose data is not known yet
-quicopt/structured.py orders, groups, minimum loads, fees and blocks in a Pyomo model
+quicopt/structured.py orderings, groups, minimum loads, fees and blocks in a Pyomo model
 quicopt/client.py     POST those bytes to the service, read the result (HTTP, stdlib)
 ```
 
@@ -174,7 +174,7 @@ extras, skips without them).
   `<=` / `==` / `>=` constraints, variable bounds (incl. unbounded) + integrality,
   `min` / `max`. PuLP is linear by construction, so this is exactly LP / MILP; a
   problem with no objective is a feasibility problem (a constant `0`).
-- **orders, groups and lookup tables** (`structured`, Pyomo) — a permutation of
+- **orderings, groups and lookup tables** (`structured`, Pyomo) — a permutation of
   items over slots, read by `item_at` / `slot_of`, with precedences and a
   starting arrangement; a partition of items into parts, read by `part_of` /
   `size_of`; tables indexed by decisions. Counted from 0, like Python.
