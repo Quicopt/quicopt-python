@@ -469,7 +469,8 @@ def import_model(m):
 
     structures, params, blocks = {}, {}, {}
     if structured is not None:
-        _check_names(structured, set(name.values()) | {n for (_, n, _) in sources.values()})
+        _check_names(structured, set(name.values())
+                     | {source_name for (_, source_name, _) in sources.values()})
         structures, params = _structure_decls(structured), _table_params(structured)
         blocks = _blocks(structured, name, sources)
 
