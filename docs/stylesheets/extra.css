@@ -94,12 +94,23 @@
 
 /* ── Section headings in the table of contents ────────────────────────────────
    A reference page groups its entries under plain-language headings (Orderings,
-   Groups, …), and at the default weight those read as one more entry among the
-   code names beneath them. Bold, with a little air above, they read as titles. */
+   Groups, …). In the entries' own type they read as one more entry among the
+   code names beneath them, and bold alone is too faint at the sidebar's size, so
+   they are set in small capitals, in the link blue, with a bar of the same colour.
+   :where() keeps the colour rule weak enough for Material's hover colour to win,
+   and the bar is drawn in currentcolor, so it follows the text on hover. */
 
+:where(.md-nav--secondary > .md-nav__list > .md-nav__item) > .md-nav__link {
+  color: var(--md-typeset-a-color);
+}
 .md-nav--secondary > .md-nav__list > .md-nav__item > .md-nav__link {
+  font-size: .6rem;
   font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  border-left: 3px solid currentcolor;
+  padding-left: .45em;
 }
 .md-nav--secondary > .md-nav__list > .md-nav__item + .md-nav__item {
-  margin-top: .6em;
+  margin-top: .9em;
 }
