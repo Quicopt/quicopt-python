@@ -60,7 +60,8 @@ Example:
 
     The service decides how long a solve may run. ``time_limit`` sets it instead,
     in seconds: a solver that proves its answer sooner still stops sooner, and a
-    search, which cannot prove it is done, runs for all of it:
+    search, which cannot prove it is done, may stop sooner too, once it stops
+    finding better answers:
 
     ```python
     result = Client().solve(m, time_limit=30)
@@ -458,9 +459,10 @@ class Client:
                 invoiced per project. Sent as a query param, not baked into the model.
             time_limit: Optional number of seconds the solve may run, in place of
                 the time the service would choose. A solver that proves its answer
-                sooner stops sooner; a search runs for all of it. The service grants
-                at most its maximum, and a warning says so when it granted less.
-                The client waits for the answer at least this long plus a minute.
+                sooner stops sooner, and a search may too, once it stops finding
+                better answers. The service grants at most its maximum, and a
+                warning says so when it granted less. The client waits for the
+                answer at least this long plus a minute.
             config: Optional service parameters, sent as the query string.
             gzip: If ``True``, gzip-compress the request body.
 

@@ -72,9 +72,9 @@ wrote in (Pyomo/MathOpt/PuLP) is recorded automatically.
 
 The service decides how long a solve may run. `client.solve(m, time_limit=30)`
 sets it to 30 seconds instead: a solver that proves its answer sooner still stops
-sooner, and a search runs for all of it. The service grants at most its maximum
-(120 s on the free tier), and the client warns when a solve got less time than
-asked for.
+sooner, and a search may stop sooner too, once it stops finding better answers.
+The service grants at most its maximum (120 s on the free tier), and the client
+warns when a solve got less time than asked for.
 
 ### Orderings, groups, minimum loads and fees
 
