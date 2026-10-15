@@ -91,3 +91,15 @@
 .md-typeset details {
   font-size: .8rem;
 }
+
+/* ── Section headings in the table of contents ────────────────────────────────
+   A reference page groups its entries under plain-language headings (Orderings,
+   Groups, …), and at the default weight those read as one more entry among the
+   code names beneath them. Bold, with a little air above, they read as titles. */
+
+.md-nav--secondary > .md-nav__list > .md-nav__item > .md-nav__link {
+  font-weight: 700;
+}
+.md-nav--secondary > .md-nav__list > .md-nav__item + .md-nav__item {
+  margin-top: .6em;
+}
