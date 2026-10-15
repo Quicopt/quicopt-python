@@ -1,25 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: (c) 2026 Tim Bode, PGI-12, Forschungszentrum Jülich
 """
-quicopt.client — talk to the Quicopt service over HTTP.
+quicopt.client — send a model to the Quicopt service and get the answer back.
 
-Encode a model (``quicopt.wire``), POST it, read the result back. Standard library
-only (``urllib``): sending adds no dependency, like the rest of the package. The
-request body is the encoded model; the response is the service's
-result JSON (``status`` / ``objective`` / ``solution`` / a ready-to-print
-``display`` / …). The first keyless call mints an API key, returned in the
-``X-Quicopt-Api-Key`` response header; it is cached at
-``$XDG_CACHE_HOME/quicopt/free_key`` and replayed as ``Authorization: Bearer`` on
-every later call — including from a later *process*, so one caller keeps one key
-rather than minting a fresh one per run.
+A [`Client`][quicopt.client.Client] sends your model to the service, and the
+answer comes back as a [`Result`][quicopt.client.Result]: the status, the
+objective value and the value of each variable. There are two ways to send it:
 
-Two entry points mirror the two service endpoints:
+- [`Client.solve`][quicopt.client.Client.solve] sends the model and waits for
+  the answer.
+- [`Client.submit`][quicopt.client.Client.submit] sends it and returns at once
+  with a [`Job`][quicopt.client.Job], which you ask for the answer later. Use it
+  for a long solve.
 
-- :meth:`Client.solve` — POST ``/v1/solve``, block for the result (synchronous).
-- :meth:`Client.submit` — POST ``/v1/jobs``, return a :class:`Job` to poll.
+No account is needed to start. On its first call a client is given an API key,
+which it saves in a file, so later runs on the same machine use the same key.
 
-A non-2xx response raises :class:`QuicoptError`, carrying the service's stable
-``reason`` code and the framed ``display`` text.
+When the service turns a request down, the call raises a
+[`QuicoptError`][quicopt.client.QuicoptError] that says why.
 
 Example:
     Maximize ``3x + 5y`` subject to ``x + 2y ≤ 5``, with ``0 ≤ x ≤ 4`` and ``y``
@@ -80,6 +78,8 @@ import json
 import os
 import tempfile
 import time
+# urllib rather than an HTTP library: sending a model adds no dependency, like
+# the rest of the package's core.
 import urllib.error
 import urllib.request
 import warnings
