@@ -77,7 +77,7 @@ def _expr(node, var):
     Args:
         node: A Pyomo expression node, variable, parameter, or Python number.
         var: A callable mapping a Pyomo ``VarData`` to its
-            :class:`~quicopt.ir.Var`.
+            [`Var`][quicopt.ir.Var].
 
     Returns:
         Expression: The corresponding Quicopt expression node.
@@ -161,7 +161,7 @@ def _apply(op, args):
     """Build an ``Apply`` node, guarding the head against the operator catalog.
 
     Args:
-        op: The operator head; must be one of :data:`_CATALOG`.
+        op: The operator head; must be one of ``_CATALOG``.
         args: The argument expressions.
 
     Returns:

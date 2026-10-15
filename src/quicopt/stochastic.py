@@ -81,7 +81,7 @@ __all__ = [
 class Distribution:
     """Any distribution the service supports, named by ``head``.
 
-    Use :class:`Normal` where it fits; use this for a distribution that has no
+    Use [`Normal`][quicopt.stochastic.Normal] where it fits; use this for a distribution that has no
     named class here yet, as in ``Distribution("uniform", 0.0, 1.0)``.
 
     A parameter may be a number or a deterministic Pyomo expression. An expression
@@ -200,8 +200,8 @@ def set_distribution(model, v, dist, name=None):
     ``v`` is no longer a decision variable: the solver is handed its value rather
     than choosing it, and every use of ``v`` means the same sample within a scenario.
 
-    ``dist`` is a :class:`Distribution` such as ``Normal(100.0, 15.0)``, or an
-    :class:`~quicopt.ir.Empirical` column holding one observed value per scenario.
+    ``dist`` is a [`Distribution`][quicopt.stochastic.Distribution] such as ``Normal(100.0, 15.0)``, or an
+    [`Empirical`][quicopt.ir.Empirical] column holding one observed value per scenario.
     ``name`` defaults to the variable's own name and is what identifies the random
     variable, so two independent ones need two names. Returns ``v``.
 
@@ -335,7 +335,7 @@ def expectation(x):
     """The expected value of ``x`` over the scenarios.
 
     Minimizing an expectation optimizes the average case and says nothing about
-    the bad ones; use :func:`cvar` when the bad ones are what matter.
+    the bad ones; use [`cvar`][quicopt.stochastic.cvar] when the bad ones are what matter.
 
     ``x`` is any expression containing a random variable. The result is
     deterministic, and can be used anywhere a number can.
@@ -425,7 +425,7 @@ def maximum(*args):
 def minimum(*args):
     """The smallest of two or more expressions.
 
-    The counterpart of :func:`maximum` — ``minimum(demand, stock)`` is what you
+    The counterpart of [`maximum`][quicopt.stochastic.maximum] — ``minimum(demand, stock)`` is what you
     actually sell.
 
     Raises:

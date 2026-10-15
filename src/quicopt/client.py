@@ -42,13 +42,13 @@ Example:
 
     The model is passed as it stands — Pyomo, MathOpt or PuLP; the matching
     importer is chosen by type, so nothing here changes with the library, and a
-    :class:`~quicopt.ir.Program` or already-encoded bytes are accepted too. No
+    [`Program`][quicopt.ir.Program] or already-encoded bytes are accepted too. No
     solver runs locally and none need be installed. Which kind of model it was is
     the service's finding, reported back as ``model_class``, not something to
     declare.
 
-    For a long solve, :meth:`Client.submit` returns immediately with a
-    :class:`Job` and :meth:`Job.result` waits on it:
+    For a long solve, [`Client.submit`][quicopt.client.Client.submit] returns immediately with a
+    [`Job`][quicopt.client.Job] and [`Job.result`][quicopt.client.Job.result] waits on it:
 
     ```python
     job = Client().submit(prob, project="pricing-study")
@@ -104,7 +104,7 @@ durable storage in an environment whose home directory does not survive the run
 every run would otherwise mint a fresh key."""
 
 DEFAULT_BASE_URL = "https://try.quicoptapi.pgi.fz-juelich.de"
-"""The public Quicopt free-tier endpoint a :class:`Client` targets when no
+"""The public Quicopt free-tier endpoint a [`Client`][quicopt.client.Client] targets when no
 ``base_url`` is given. Mirrors the Julia client's ``DEFAULT_BASE_URL`` so both
 clients reach the same server out of the box."""
 
@@ -113,7 +113,7 @@ def _default_key_path() -> Path:
     """The default location of the cached free key.
 
     ``$XDG_CACHE_HOME/quicopt/free_key``, falling back to ``~/.cache`` when the
-    variable is unset, unless :data:`KEY_PATH_ENV` overrides the whole path.
+    variable is unset, unless [`KEY_PATH_ENV`][quicopt.client.KEY_PATH_ENV] overrides the whole path.
 
     Returns:
         Path: Where the free key is read from and written to.
@@ -203,7 +203,7 @@ class Result:
     with nothing to feasibility-check, or a run that found no solution.
     ``display`` is the framed, ready-to-print summary the service renders the same
     way for every kind of model. ``structures`` holds, by name, the
-    :class:`Arrangement` of each permutation and the :class:`Grouping` of each
+    [`Arrangement`][quicopt.client.Arrangement] of each permutation and the [`Grouping`][quicopt.client.Grouping] of each
     partition the model declares, and is empty for a model with neither."""
     job_id: str
     status: str
@@ -413,7 +413,7 @@ def _meta_config(model: Any, project: Optional[str], time_limit: Optional[float]
 
 class Client:
     """A connection to a Quicopt service at ``base_url`` — the public free tier
-    (:data:`DEFAULT_BASE_URL`) unless another URL is given. Holds the API key: pass
+    ([`DEFAULT_BASE_URL`][quicopt.client.DEFAULT_BASE_URL]) unless another URL is given. Holds the API key: pass
     a known one, or let the first keyless call mint one — which is then cached on
     disk and reused by later runs, so one caller keeps one key."""
 
@@ -424,15 +424,17 @@ class Client:
 
         Args:
             base_url: The service base URL; a trailing slash is stripped. Defaults
-                to :data:`DEFAULT_BASE_URL`, the public free-tier endpoint; pass
+                to [`DEFAULT_BASE_URL`][quicopt.client.DEFAULT_BASE_URL], the public free-tier endpoint; pass
                 another URL to target a different server.
             api_key: A known API key, or ``None`` to reuse the cached free key
                 (minting one on the first keyless call). A key passed here is used
                 as-is and never written to the cache — so authenticating with a
                 specific key cannot clobber the free key of the user running you.
             timeout: Per-request socket timeout, in seconds.
-            key_path: Where to cache the free key. Defaults to
-                :func:`_default_key_path`.
+            key_path: Where to cache the free key. Defaults to the path in the
+                environment variable [`KEY_PATH_ENV`][quicopt.client.KEY_PATH_ENV]
+                names, else ``quicopt/free_key`` in your cache directory
+                (``$XDG_CACHE_HOME``, or ``~/.cache`` when that is unset).
             cache: Set ``False`` to keep the key in memory only, neither reading nor
                 writing the cache file.
         """
@@ -491,13 +493,13 @@ class Client:
             project: Optional project tag for the call (per-project invoicing), sent
                 as a query param, not baked into the model.
             time_limit: Optional number of seconds the solve may run, as for
-                :meth:`solve`. :meth:`Job.result` then waits at least this long
+                [`solve`][quicopt.client.Client.solve]. [`Job.result`][quicopt.client.Job.result] then waits at least this long
                 plus a minute by default.
             config: Optional service parameters, sent as the query string.
             gzip: If ``True``, gzip-compress the request body.
 
         Returns:
-            Job: A handle to the queued job; call :meth:`Job.result` to await it.
+            Job: A handle to the queued job; call [`Job.result`][quicopt.client.Job.result] to await it.
 
         Raises:
             QuicoptError: On a non-2xx response.
@@ -529,7 +531,7 @@ class Client:
             method: The HTTP method.
             path: The path under ``base_url`` (e.g. ``/v1/solve``).
             data: The request body, or ``None`` for a bodyless request.
-            **kw: Forwarded to :meth:`_attempt` (``config``, ``gzip``, ``timeout``).
+            **kw: Forwarded to ``_attempt`` (``config``, ``gzip``, ``timeout``).
 
         Returns:
             bytes: The raw response body.
@@ -589,13 +591,13 @@ class Client:
             raise QuicoptError(e.code, _decode(e.read())) from None
 
     def _request(self, method: str, path: str, data: Optional[bytes] = None, **kw) -> Dict[str, Any]:
-        """Perform a request via :meth:`_open` and parse its JSON body.
+        """Perform a request via ``_open`` and parse its JSON body.
 
         Args:
             method: The HTTP method.
             path: The path under ``base_url``.
             data: The request body, or ``None``.
-            **kw: Forwarded to :meth:`_open` (``config``, ``gzip``, ``timeout``).
+            **kw: Forwarded to ``_open`` (``config``, ``gzip``, ``timeout``).
 
         Returns:
             dict: The parsed JSON object, or ``{}`` for an empty body.
@@ -676,7 +678,7 @@ def _decode(raw: bytes) -> Dict[str, Any]:
 
 @dataclass
 class Job:
-    """A handle to an async job. :meth:`result` polls until it finishes.
+    """A handle to an async job. [`result`][quicopt.client.Job.result] polls until it finishes.
     ``time_limit`` is the one the job was submitted with, if any."""
     client: Client
     job_id: str

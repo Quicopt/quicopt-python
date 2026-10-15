@@ -171,7 +171,7 @@ class TableRef(Expression):
     """The entry of the parameter table ``param`` at positions given by
     expressions: one index for a table of one dimension, two for a table of two.
 
-    Unlike a :class:`Param`, whose index is fixed data, an index here may involve
+    Unlike a [`Param`][quicopt.ir.Param], whose index is fixed data, an index here may involve
     decisions — a structure's part, an integer variable — so the entry is read
     when the model is solved. The table must hold every entry on the positions
     ``1..a`` (or ``1..a`` by ``1..b``). An index value that is not a whole number
@@ -302,7 +302,7 @@ class Program:
     deterministic model.
 
     Structured decision variables, a permutation or a partition, are declared by
-    name in ``structures`` and read in expressions through :class:`StructRef`.
+    name in ``structures`` and read in expressions through [`StructRef`][quicopt.ir.StructRef].
 
     ``blocks`` names groups of variables, each the variables of one subproblem of
     the model (one customer's supply, say), as ``{name: [Var, …]}``. A variable is

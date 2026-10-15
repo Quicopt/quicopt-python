@@ -134,7 +134,7 @@ def _wstr(io, field, s):
 def _wmsg(io, field, b):
     """Write an embedded-message field (a length-delimited field over its bytes).
 
-    Semantically distinct from :func:`_wbytes` — it names the intent (an embedded
+    Semantically distinct from ``_wbytes`` — it names the intent (an embedded
     message rather than opaque bytes) though the encoding is identical.
 
     Args:
@@ -172,7 +172,7 @@ def _wvarint(io, field, x):
     Args:
         io: The byte sink.
         field: The proto field number.
-        x: The integer to encode (see :func:`_putvarint` for negatives).
+        x: The integer to encode (see ``_putvarint`` for negatives).
 
     Returns:
         None. The field is appended to ``io``.
@@ -185,7 +185,7 @@ def _msg(build):
     """Materialize an embedded message's bytes by running its builder on a buffer.
 
     The one-line idiom for "serialize a sub-message": hand a fresh sink to
-    ``build`` and hand back what it wrote, ready to pass to :func:`_wmsg`.
+    ``build`` and hand back what it wrote, ready to pass to ``_wmsg``.
 
     Args:
         build: A callable ``build(io)`` that writes the message's fields into the
@@ -233,7 +233,7 @@ def _idxkey(t):
 
     Returns:
         tuple: ``(len(t), (elemkey, …))``, so shorter tuples sort first and equal
-        lengths compare position by position under :func:`_elemkey`.
+        lengths compare position by position under ``_elemkey``.
     """
     return (len(t), tuple(_elemkey(e) for e in t))
 
@@ -285,7 +285,7 @@ def _idx_msg(idx):
         idx: The index tuple.
 
     Returns:
-        bytes: The encoded ``Index`` message, for embedding via :func:`_wmsg`.
+        bytes: The encoded ``Index`` message, for embedding via ``_wmsg``.
     """
     return _msg(lambda b: _enc_index(b, idx))
 
@@ -295,7 +295,7 @@ def _enc_var_ref(io, v):
 
     Args:
         io: The byte sink.
-        v: The :class:`~quicopt.ir.Var` to encode (``v.name``, ``v.index``).
+        v: The [`Var`][quicopt.ir.Var] to encode (``v.name``, ``v.index``).
 
     Returns:
         None. The fields are appended to ``io``.
@@ -309,7 +309,7 @@ def _enc_param_ref(io, p):
 
     Args:
         io: The byte sink.
-        p: The :class:`~quicopt.ir.Param` to encode (``p.name``, ``p.index``).
+        p: The [`Param`][quicopt.ir.Param] to encode (``p.name``, ``p.index``).
 
     Returns:
         None. The fields are appended to ``io``.
@@ -323,7 +323,7 @@ def _enc_set_ref(io, s):
 
     Args:
         io: The byte sink.
-        s: The :class:`~quicopt.ir.SetRef` to encode (``s.name``, ``s.args``).
+        s: The [`SetRef`][quicopt.ir.SetRef] to encode (``s.name``, ``s.args``).
 
     Returns:
         None. The fields are appended to ``io``.
@@ -344,11 +344,11 @@ def _enc_expr(io, e):
 
     Args:
         io: The byte sink.
-        e: An expression node (:class:`~quicopt.ir.Const` /
-            :class:`~quicopt.ir.Param` / :class:`~quicopt.ir.Var` /
-            :class:`~quicopt.ir.Apply` / :class:`~quicopt.ir.Reduce` /
-            :class:`~quicopt.ir.SourceRef` / :class:`~quicopt.ir.StructRef` /
-            :class:`~quicopt.ir.TableRef`).
+        e: An expression node ([`Const`][quicopt.ir.Const] /
+            [`Param`][quicopt.ir.Param] / [`Var`][quicopt.ir.Var] /
+            [`Apply`][quicopt.ir.Apply] / [`Reduce`][quicopt.ir.Reduce] /
+            [`SourceRef`][quicopt.ir.SourceRef] / [`StructRef`][quicopt.ir.StructRef] /
+            [`TableRef`][quicopt.ir.TableRef]).
 
     Returns:
         None. The fields are appended to ``io``.
@@ -398,7 +398,7 @@ def _expr_msg(e):
         e: An expression node.
 
     Returns:
-        bytes: The encoded ``Expression`` message, for embedding via :func:`_wmsg`.
+        bytes: The encoded ``Expression`` message, for embedding via ``_wmsg``.
     """
     return _msg(lambda b: _enc_expr(b, e))
 
@@ -413,8 +413,8 @@ def _enc_conset(io, c):
 
     Args:
         io: The byte sink.
-        c: A constraint set (:class:`~quicopt.ir.Zero` /
-            :class:`~quicopt.ir.Nonneg` / :class:`~quicopt.ir.Indicator`).
+        c: A constraint set ([`Zero`][quicopt.ir.Zero] /
+            [`Nonneg`][quicopt.ir.Nonneg] / [`Indicator`][quicopt.ir.Indicator]).
 
     Returns:
         None. The fields are appended to ``io``.
@@ -442,7 +442,7 @@ def _conset_msg(s):
         s: A constraint set (``Zero`` / ``Nonneg`` / ``Indicator``).
 
     Returns:
-        bytes: The encoded ``ConSet`` message, for embedding via :func:`_wmsg`.
+        bytes: The encoded ``ConSet`` message, for embedding via ``_wmsg``.
     """
     return _msg(lambda b: _enc_conset(b, s))
 
@@ -456,7 +456,7 @@ def _enc_constraint(io, c):
 
     Args:
         io: The byte sink.
-        c: The :class:`~quicopt.ir.Constraint` to encode (``c.f``, ``c.set``,
+        c: The [`Constraint`][quicopt.ir.Constraint] to encode (``c.f``, ``c.set``,
             ``c.over``).
 
     Returns:
@@ -497,7 +497,7 @@ def _bound_msg(b):
         b: The bound (a param-table name ``str`` or a number).
 
     Returns:
-        bytes: The encoded ``Bound`` message, for embedding via :func:`_wmsg`.
+        bytes: The encoded ``Bound`` message, for embedding via ``_wmsg``.
     """
     return _msg(lambda c: _enc_bound(c, b))
 
@@ -511,7 +511,7 @@ def _enc_var_decl(io, vd):
 
     Args:
         io: The byte sink.
-        vd: The :class:`~quicopt.ir.VarDecl` to encode (``name``, ``axes``,
+        vd: The [`VarDecl`][quicopt.ir.VarDecl] to encode (``name``, ``axes``,
             ``domain``, ``lower``, ``upper``, ``start``).
 
     Returns:
@@ -531,7 +531,7 @@ def _enc_index_set(io, s):
 
     Args:
         io: The byte sink.
-        s: The :class:`~quicopt.ir.IndexSet` to encode (``s.name``, ``s.elements``);
+        s: The [`IndexSet`][quicopt.ir.IndexSet] to encode (``s.name``, ``s.elements``);
             elements are emitted in their given order (field 2, repeated).
 
     Returns:
@@ -546,7 +546,7 @@ def _enc_indexed_set(io, name, fibres):
     """Encode one indexed (parametrized) set: name + its key→elements fibres.
 
     Each fibre is an entry ``(key index, element list)``. The fibres are emitted
-    in :func:`_idxkey` order so this order-free ``dict`` produces canonical bytes.
+    in ``_idxkey`` order so this order-free ``dict`` produces canonical bytes.
 
     Args:
         io: The byte sink.
@@ -569,7 +569,7 @@ def _enc_indexed_set(io, name, fibres):
 def _enc_param_table(io, name, tbl):
     """Encode one ``Param`` table: name + its key→value entries.
 
-    Entries are emitted in :func:`_idxkey` order (canonical bytes from an order-free
+    Entries are emitted in ``_idxkey`` order (canonical bytes from an order-free
     ``dict``), and each value is *always* written even when ``0.0``.
 
     Args:
@@ -600,8 +600,8 @@ def _enc_source(io, name, s):
     Args:
         io: The byte sink.
         name: The name the source is declared and referenced under.
-        s: The declaration (:class:`~quicopt.ir.Parametric` /
-            :class:`~quicopt.ir.Empirical`).
+        s: The declaration ([`Parametric`][quicopt.ir.Parametric] /
+            [`Empirical`][quicopt.ir.Empirical]).
 
     Returns:
         None. The fields are appended to ``io``.
@@ -638,8 +638,8 @@ def _enc_structure(io, name, s):
     Args:
         io: The byte sink.
         name: The name the structure is declared and referenced under.
-        s: The declaration (:class:`~quicopt.ir.PermutationDecl` or
-            :class:`~quicopt.ir.PartitionDecl`).
+        s: The declaration ([`PermutationDecl`][quicopt.ir.PermutationDecl] or
+            [`PartitionDecl`][quicopt.ir.PartitionDecl]).
 
     Returns:
         None. The fields are appended to ``io``.
@@ -670,7 +670,7 @@ def _enc_block(io, name, members):
     Args:
         io: The byte sink.
         name: The block's name.
-        members: The block's variables, a list of :class:`~quicopt.ir.Var`.
+        members: The block's variables, a list of [`Var`][quicopt.ir.Var].
 
     Returns:
         None. The fields are appended to ``io``.
@@ -718,7 +718,7 @@ def encode(prog: Program) -> bytes:
     existed, so none of them costs an ordinary model anything.
 
     Args:
-        prog: The :class:`~quicopt.ir.Program` to encode.
+        prog: The [`Program`][quicopt.ir.Program] to encode.
 
     Returns:
         bytes: The message, deterministic and identical byte for byte to what the

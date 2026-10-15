@@ -465,12 +465,12 @@ class _Active(_Decided):
 # ── permutations ────────────────────────────────────────────────────────────
 
 class Permutation:
-    """A permutation declared by :func:`permutation`: items in as many slots,
+    """A permutation declared by [`permutation`][quicopt.structured.permutation]: items in as many slots,
     both counted from 0."""
 
     def __init__(self, name, record):
         """Wrap the declaration ``record`` of the permutation ``name``; use
-        :func:`permutation` to declare one."""
+        [`permutation`][quicopt.structured.permutation] to declare one."""
         self._name = name
         self._record = record
 
@@ -488,7 +488,7 @@ class Permutation:
         """The item in slot ``slot``, an expression whose value the service chooses.
 
         For a route whose items are stops, ``route.item_at(0)`` is the first stop
-        visited. Index a :class:`LookupTable` with it to read data about that item.
+        visited. Index a [`LookupTable`][quicopt.structured.LookupTable] with it to read data about that item.
 
         ``slot`` is a whole number from 0 to ``n_items - 1``.
 
@@ -577,7 +577,7 @@ def permutation(model, name, n_items, start=None):
     the slot of item ``i``, so it holds each of ``0..n_items - 1`` once. Left out,
     item ``i`` starts in slot ``i``.
 
-    Returns the :class:`Permutation`, to read with ``item_at`` and ``slot_of`` and
+    Returns the [`Permutation`][quicopt.structured.Permutation], to read with ``item_at`` and ``slot_of`` and
     to constrain with ``precede``.
 
     Raises:
@@ -605,12 +605,12 @@ def permutation(model, name, n_items, start=None):
 # ── partitions ──────────────────────────────────────────────────────────────
 
 class Partition:
-    """A partition declared by :func:`partition`: items split into parts, both
+    """A partition declared by [`partition`][quicopt.structured.partition]: items split into parts, both
     counted from 0."""
 
     def __init__(self, name, record):
         """Wrap the declaration ``record`` of the partition ``name``; use
-        :func:`partition` to declare one."""
+        [`partition`][quicopt.structured.partition] to declare one."""
         self._name = name
         self._record = record
 
@@ -634,7 +634,7 @@ class Partition:
         chooses, from 0 to ``n_parts - 1``.
 
         For people split into teams, ``teams.part_of(2)`` is the team of person 2.
-        Index a :class:`LookupTable` with it to read data about that part.
+        Index a [`LookupTable`][quicopt.structured.LookupTable] with it to read data about that part.
 
         Raises:
             TypeError: If ``item`` is not a whole number.
@@ -689,12 +689,12 @@ def partition(model, name, n_items, n_parts, start=None):
     may stay empty.
 
     People into teams, jobs onto machines, products into warehouses: in each, the
-    model reads the part an item is in through :meth:`Partition.part_of` and how
-    many items a part holds through :meth:`Partition.size_of`. Items and parts
+    model reads the part an item is in through [`Partition.part_of`][quicopt.structured.Partition.part_of] and how
+    many items a part holds through [`Partition.size_of`][quicopt.structured.Partition.size_of]. Items and parts
     count from 0.
 
     ``name`` identifies the partition in the result, as
-    ``result.structures[name]``, a :class:`~quicopt.client.Grouping`. ``n_items``
+    ``result.structures[name]``, a [`Grouping`][quicopt.client.Grouping]. ``n_items``
     is at least 1 and ``n_parts`` at least 2. ``start`` is the split the service's
     search starts from: ``start[i]`` is the part of item ``i``. Left out, the
     service deals the items out over the parts in turn.
@@ -754,13 +754,13 @@ def _has_cycle(edges, n_items):
 # ── lookup tables ───────────────────────────────────────────────────────────
 
 class LookupTable:
-    """A table of data declared by :func:`lookup_table`, to be indexed with
+    """A table of data declared by [`lookup_table`][quicopt.structured.lookup_table], to be indexed with
     expressions: ``table[i]`` for a table of one dimension, ``table[i, j]`` for
     two, positions counted from 0."""
 
     def __init__(self, name, values):
         """Wrap the stored entries ``values`` of the table ``name``; use
-        :func:`lookup_table` to declare one."""
+        [`lookup_table`][quicopt.structured.lookup_table] to declare one."""
         self._name = name
         self._values = values
 
@@ -928,8 +928,8 @@ def semicontinuous(var):
 
     ``var`` is a variable (``m.x``) or an indexed one (``m.ship``, every element).
     Its bounds are the range it takes when it is not 0; both must be finite, and
-    when 0 already lies within them nothing changes. Use :func:`semiinteger` for an
-    integer variable, and :func:`active` to charge a fee whenever the variable is
+    when 0 already lies within them nothing changes. Use [`semiinteger`][quicopt.structured.semiinteger] for an
+    integer variable, and [`active`][quicopt.structured.active] to charge a fee whenever the variable is
     not 0.
 
     Raises:
@@ -945,7 +945,7 @@ def semiinteger(var):
     ``var`` is a variable (``m.x``) or an indexed one (``m.ship``, every element),
     declared with ``within=pyo.Integers`` (or ``NonNegativeIntegers``, …). Its
     bounds are the range it takes when it is not 0; both must be finite. See
-    :func:`semicontinuous` for a continuous variable.
+    [`semicontinuous`][quicopt.structured.semicontinuous] for a continuous variable.
 
     Raises:
         TypeError: If ``var`` is not a Pyomo variable, or is not integer, or is
@@ -1011,8 +1011,8 @@ def active(var):
     ``var`` is not 0, and 0 when it is.
 
     A fee due whenever a delivery is made is ``fee * active(m.ship[w, c])``. On a
-    variable that is 0 or within its bounds (:func:`semicontinuous`,
-    :func:`semiinteger`), such a fee keeps a linear model linear, so the service
+    variable that is 0 or within its bounds ([`semicontinuous`][quicopt.structured.semicontinuous],
+    [`semiinteger`][quicopt.structured.semiinteger]), such a fee keeps a linear model linear, so the service
     solves it exactly.
 
     Raises:
