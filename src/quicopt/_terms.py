@@ -89,7 +89,7 @@ def _emit(cons, f, lb, ub):
     direction.
 
     Args:
-        cons: The list of :class:`~quicopt.ir.Constraint` rows appended to
+        cons: The list of [`Constraint`][quicopt.ir.Constraint] rows appended to
             (mutated in place).
         f: The expression of the row body.
         lb: The row's lower bound (``-inf`` for none).
