@@ -26,7 +26,7 @@ Example:
     m.cap = pyo.Constraint(expr=m.x + 2 * m.y <= 5)
     m.obj = pyo.Objective(expr=3 * m.x + 5 * m.y, sense=pyo.maximize)
 
-    result = Client().solve(m)                # the import below happens inside
+    result = Client(api_key="…").solve(m)     # the import below happens inside
     print(result.status, result.objective)    # optimal 14.0
     print(result.solution)                    # {'x1': 3.0, 'x2': 1.0}
     ```

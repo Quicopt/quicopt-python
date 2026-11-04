@@ -45,26 +45,13 @@ m = pyo.ConcreteModel()
 m.x = pyo.Var(bounds=(0.1, 10))
 m.obj = pyo.Objective(expr=m.x**2 + 1.0 / m.x, sense=pyo.minimize)
 
-client = Client()                             # defaults to the free-tier Quicopt server
+client = Client(api_key="…")                  # the key from your sign-up email
 result = client.solve(m)                      # read the model, encode it, solve it
 print(result.status, result.objective, result.solution)
 print(result.display)                         # the service's ready-to-print summary
 ```
 
-`solve` takes the model as it stands (Pyomo, OR-Tools MathOpt, or PuLP) and reads
-it into Quicopt's own form on the way out. The first keyless call mints an API key,
-cached at `$XDG_CACHE_HOME/quicopt/free_key` (`~/.cache/…` by default) and replayed
-on every later call — including from later runs, so you keep one key without doing
-anything.
-Pass `Client(api_key=…)` to authenticate with a key you already hold (used as-is,
-never cached), or `Client(cache=False)` to keep the key in memory only. Point
-`Client(base_url=…)` at another server to override the default. For a long solve,
-`client.submit(m)` returns a job handle to poll — `job.result()`.
-
-Where the home directory does not survive the run (CI, containers, Colab), the
-cache is wiped between sessions and each run mints a new key. Set
-`QUICOPT_KEY_PATH` to a durable location — or `Client(key_path=…)` — to keep one
-key across sessions.
+`solve` takes the model as it stands (Pyomo, OR-Tools MathOpt, or PuLP) and reads it into Quicopt's own form on the way out. The service needs an API key. Register at https://quicopt.com/signup and the key arrives by email. Without a key, the call fails with a message that links to the sign-up page. To keep the key out of your code, set the environment variable `QUICOPT_API_KEY` instead and create the client as `Client()`. Point `Client(base_url=…)` at another server to override the default. For a long solve, `client.submit(m)` returns a job handle to poll — `job.result()`.
 
 Tag a call with `client.solve(m, project="my-project")` to attribute it to a
 project — handy when one key serves several projects. Which modeling library you
@@ -109,7 +96,7 @@ m.cost = pyo.Objective(expr=
     + sum(pyo.Expr_if(IF=sum(m.ship[w, c] for c in range(3)) >= 1,           # opening fee
                       THEN=opening[w], ELSE=0) for w in range(3)))
 
-print(Client().solve(m).objective)            # 300.0: warehouse 1 stays closed
+print(Client(api_key="…").solve(m).objective)  # 300.0: warehouse 1 stays closed
 ```
 
 The [API reference](https://quicopt.github.io/quicopt-python/api/structured/)
@@ -184,8 +171,8 @@ extras, skips without them).
   blocks of variables.
 - **sending (HTTP)** — `Client.solve` / `Client.submit` over `/v1/solve` and
   `/v1/jobs`: the encoded model up, result JSON (status / objective / solution /
-  framed `display` / the arrangement of each permutation and the grouping of each partition) back; API-key minting on
-  the first call, optional gzip, an optional time limit. Standard library only.
+  framed `display` / the arrangement of each permutation and the grouping of each partition) back; the API key as a
+  bearer token, optional gzip, an optional time limit. Standard library only.
 
 ## License
 

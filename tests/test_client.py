@@ -24,6 +24,10 @@ from quicopt import (Apply, Arrangement, Grouping, Client, Const, Constraint, CO
                      DEFAULT_BASE_URL, Job, Nonneg, Program, QuicoptError, Var, VarDecl,
                      encode)
 
+# A developer's own QUICOPT_API_KEY would make every client below hold that key,
+# so the suite runs as a caller without one.
+os.environ.pop("QUICOPT_API_KEY", None)
+
 _KEY = "k" * 64
 _JOB = "job-1"
 _RESULT = {"job_id": _JOB, "status": "optimal", "objective": 4.0, "feasible": True,
@@ -172,7 +176,7 @@ def test_metadata_source_and_project():
 def test_default_base_url():
     # Omitting base_url targets the public free tier; an explicit URL still wins.
     # cache=False keeps construction from touching the real cache file.
-    assert Client(cache=False).base_url == DEFAULT_BASE_URL == "https://try.quicoptapi.pgi.fz-juelich.de"
+    assert Client(cache=False).base_url == DEFAULT_BASE_URL == "https://quicoptapi.pgi.fz-juelich.de"
     assert Client("http://127.0.0.1:9", cache=False).base_url == "http://127.0.0.1:9"
 
 
@@ -208,6 +212,28 @@ def test_explicit_key_is_never_cached():
         assert srv.last_auth == "Bearer " + "e" * 64
         assert not client.key_path.exists()
         assert srv.mints == 0
+
+
+def test_environment_key_is_used_and_never_cached():
+    # A key set in QUICOPT_API_KEY is the caller's own, like one passed as api_key:
+    # sent as-is, never written to the cache, and a passed key still wins.
+    from quicopt.client import API_KEY_ENV
+
+    with _serve() as (client, srv):
+        try:
+            os.environ[API_KEY_ENV] = " " + "v" * 64 + "\n"   # stray whitespace is stripped
+            held = Client(client.base_url, timeout=5.0, key_path=client.key_path)
+            passed = Client(client.base_url, "e" * 64, timeout=5.0, key_path=client.key_path)
+            os.environ[API_KEY_ENV] = "   "                   # a blank variable counts as unset
+            blank = Client(client.base_url, timeout=5.0, key_path=client.key_path)
+        finally:
+            os.environ.pop(API_KEY_ENV, None)
+        held.solve(_program())
+        assert srv.last_auth == "Bearer " + "v" * 64
+        assert not client.key_path.exists()
+        assert srv.mints == 0
+        assert passed.api_key == "e" * 64
+        assert blank.api_key is None
 
 
 def test_cache_can_be_disabled():

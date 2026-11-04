@@ -13,8 +13,8 @@ objective value and the value of each variable. There are two ways to send it:
   with a [`Job`][quicopt.client.Job], which you ask for the answer later. Use it
   for a long solve.
 
-No account is needed to start. On its first call a client is given an API key,
-which it saves in a file, so later runs on the same machine use the same key.
+The service needs an API key. Register at <https://quicopt.com/signup> to receive
+one by email, then pass it as ``Client(api_key="…")``.
 
 When the service turns a request down, the call raises a
 [`QuicoptError`][quicopt.client.QuicoptError] that says why.
@@ -33,7 +33,8 @@ Example:
     prob += 3 * x + 5 * y
     prob += x + 2 * y <= 5
 
-    result = Client().solve(prob)                 # read, encode, POST, wait
+    client = Client(api_key="…")                  # the key from your sign-up email
+    result = client.solve(prob)                   # read, encode, POST, wait
     print(result.status, result.objective)        # optimal 14.0
     print(result.solution)                        # {'x': 3.0, 'y': 1.0}
     print(result.model_class)                     # milp
@@ -51,7 +52,7 @@ Example:
     [`Job`][quicopt.client.Job] and [`Job.result`][quicopt.client.Job.result] waits on it:
 
     ```python
-    job = Client().submit(prob, project="pricing-study")
+    job = client.submit(prob, project="pricing-study")
     print(job.status()["status"])                 # queued
     result = job.result(timeout=600)              # poll until done
     ```
@@ -62,7 +63,7 @@ Example:
     finding better answers:
 
     ```python
-    result = Client().solve(m, time_limit=30)
+    result = client.solve(m, time_limit=30)
     print(result.solver_data["time_budget_s"])    # 30.0
     ```
 
@@ -97,16 +98,21 @@ __all__ = ["Client", "Job", "Result", "Arrangement", "Grouping", "QuicoptError",
 
 _OCTET = "application/octet-stream"
 
-KEY_PATH_ENV = "QUICOPT_KEY_PATH"
-"""Environment variable overriding where the free key is cached. Point it at
-durable storage in an environment whose home directory does not survive the run
-(CI, containers, Colab), where the default location is wiped between sessions and
-every run would otherwise mint a fresh key."""
+API_KEY_ENV = "QUICOPT_API_KEY"
+"""Environment variable a [`Client`][quicopt.client.Client] reads its API key from
+when no ``api_key`` is passed. It keeps the key out of your code."""
 
-DEFAULT_BASE_URL = "https://try.quicoptapi.pgi.fz-juelich.de"
-"""The public Quicopt free-tier endpoint a [`Client`][quicopt.client.Client] targets when no
-``base_url`` is given. Mirrors the Julia client's ``DEFAULT_BASE_URL`` so both
-clients reach the same server out of the box."""
+KEY_PATH_ENV = "QUICOPT_KEY_PATH"
+"""Environment variable overriding where the client saves a key the server issued
+itself. A server that gives a caller without a key a new one on the first call has
+the client save that key and reuse it in later runs. Point the variable at durable
+storage where the home directory does not survive the run (CI, containers, Colab)."""
+
+# The same address as the Julia, Ruby and R clients' DEFAULT_BASE_URL, so every
+# client reaches the same server out of the box.
+DEFAULT_BASE_URL = "https://quicoptapi.pgi.fz-juelich.de"
+"""The Quicopt service a [`Client`][quicopt.client.Client] targets when no
+``base_url`` is given."""
 
 
 def _default_key_path() -> Path:
@@ -412,10 +418,10 @@ def _meta_config(model: Any, project: Optional[str], time_limit: Optional[float]
 
 
 class Client:
-    """A connection to a Quicopt service at ``base_url`` — the public free tier
-    ([`DEFAULT_BASE_URL`][quicopt.client.DEFAULT_BASE_URL]) unless another URL is given. Holds the API key: pass
-    a known one, or let the first keyless call mint one — which is then cached on
-    disk and reused by later runs, so one caller keeps one key."""
+    """A connection to a Quicopt service at ``base_url``, by default
+    [`DEFAULT_BASE_URL`][quicopt.client.DEFAULT_BASE_URL]. It holds your API key:
+    the one passed as ``api_key``, else the one in the environment variable
+    [`API_KEY_ENV`][quicopt.client.API_KEY_ENV]."""
 
     def __init__(self, base_url: str = DEFAULT_BASE_URL, api_key: Optional[str] = None,
                  *, timeout: float = 60.0, key_path: Optional[Union[str, Path]] = None,
@@ -424,24 +430,31 @@ class Client:
 
         Args:
             base_url: The service base URL; a trailing slash is stripped. Defaults
-                to [`DEFAULT_BASE_URL`][quicopt.client.DEFAULT_BASE_URL], the public free-tier endpoint; pass
+                to [`DEFAULT_BASE_URL`][quicopt.client.DEFAULT_BASE_URL]; pass
                 another URL to target a different server.
-            api_key: A known API key, or ``None`` to reuse the cached free key
-                (minting one on the first keyless call). A key passed here is used
-                as-is and never written to the cache — so authenticating with a
-                specific key cannot clobber the free key of the user running you.
+            api_key: Your API key. When ``None``, the client reads the key from the
+                environment variable [`API_KEY_ENV`][quicopt.client.API_KEY_ENV],
+                and failing that uses a key saved by an earlier run (see
+                ``key_path``). A key passed here or read from the environment is
+                used as-is and never saved.
             timeout: Per-request socket timeout, in seconds.
-            key_path: Where to cache the free key. Defaults to the path in the
-                environment variable [`KEY_PATH_ENV`][quicopt.client.KEY_PATH_ENV]
-                names, else ``quicopt/free_key`` in your cache directory
-                (``$XDG_CACHE_HOME``, or ``~/.cache`` when that is unset).
-            cache: Set ``False`` to keep the key in memory only, neither reading nor
-                writing the cache file.
+            key_path: Where to save a key the server issued itself, on a first call
+                without a key. Defaults to the path the environment variable
+                [`KEY_PATH_ENV`][quicopt.client.KEY_PATH_ENV] names, else
+                ``quicopt/free_key`` in your cache directory (``$XDG_CACHE_HOME``,
+                or ``~/.cache`` when that is unset).
+            cache: Set ``False`` to keep an issued key in memory only, neither
+                reading nor writing the file.
         """
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.key_path = Path(key_path).expanduser() if key_path is not None else _default_key_path()
         self.cache = cache
+        if api_key is None:
+            api_key = os.environ.get(API_KEY_ENV, "").strip() or None
+        # A key the caller holds — passed, or set in the environment — is never
+        # written to the cache, so it cannot clobber the issued key of whoever
+        # runs the code, and is never discarded on a 401.
         self._explicit = api_key is not None
         self.api_key = api_key if self._explicit else (_read_key(self.key_path) if cache else None)
         # Only a key that came off disk may be discarded and re-minted on a 401 —

@@ -22,7 +22,7 @@ Example:
     prob += x + 2 * y <= 5
 
     body = encode(import_model(prob))         # 209 bytes
-    result = Client().solve(body)             # bytes solve like a model
+    result = Client(api_key="…").solve(body)  # bytes solve like a model
     print(result.status, result.objective)    # optimal 14.0
     ```
 

@@ -44,7 +44,7 @@ Example:
         sense=pyo.minimize)
     m.service = pyo.Constraint(expr=prob(m.demand - m.x <= 0) >= 0.9)
 
-    result = Client().solve(m)
+    result = Client(api_key="…").solve(m)
     print(result.solution)                      # {'x1': 118.7…} — the service level binds
     ```
 

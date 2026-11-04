@@ -32,7 +32,7 @@ Example:
     model.add_linear_constraint(x + 2 * y <= 5.0)
     model.maximize(3 * x + 5 * y)
 
-    result = Client().solve(model)            # the import below happens inside
+    result = Client(api_key="…").solve(model)  # the import below happens inside
     print(result.status, result.objective)    # optimal 14.0
     print(result.solution)                    # {'x': 3.0, 'y': 1.0}
     ```

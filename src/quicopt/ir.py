@@ -34,7 +34,7 @@ Example:
             set=Nonneg())],
     )
 
-    result = Client().solve(p)                # a Program solves like a model
+    result = Client(api_key="…").solve(p)     # a Program solves like a model
     print(result.status, result.objective)    # optimal 14.0
     print(result.solution)                    # {'x': 3.0, 'y': 1.0}
     ```
