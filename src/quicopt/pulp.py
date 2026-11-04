@@ -29,7 +29,7 @@ Example:
     prob += 3 * x + 5 * y                     # the first `+=` is the objective
     prob += x + 2 * y <= 5                    # every later one a constraint
 
-    result = Client().solve(prob)             # the import below happens inside
+    result = Client(api_key="…").solve(prob)  # the import below happens inside
     print(result.status, result.objective)    # optimal 14.0
     print(result.solution)                    # {'x': 3.0, 'y': 1.0}
     ```

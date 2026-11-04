@@ -41,7 +41,7 @@ Example:
         expr=sum(dist[route.item_at(k), route.item_at(k + 1)] for k in range(4)),
         sense=pyo.minimize)
 
-    result = Client().solve(m)
+    result = Client(api_key="…").solve(m)
     print(result.objective)                       # 4.0
     print(result.structures["route"].item_at)     # [3, 1, 4, 2, 0]
     ```
@@ -102,7 +102,7 @@ Minimum loads and fees:
         + sum(pyo.Expr_if(IF=sum(m.ship[w, c] for c in range(3)) >= 1,
                           THEN=opening[w], ELSE=0) for w in range(3)))
 
-    result = Client().solve(m)
+    result = Client(api_key="…").solve(m)
     print(result.objective)                       # 300.0
     # the deliveries ship[0, 0], ship[0, 1], …, ship[2, 2] are x1 to x9 in the solution
     print([result.solution[f"x{k}"] for k in range(1, 10)])
@@ -137,7 +137,7 @@ Splitting items into groups:
     m.four = pyo.Constraint(expr=teams.size_of(0) == 4)
     m.stronger = pyo.Objective(expr=maximum(total[0], total[1]))
 
-    result = Client().solve(m)
+    result = Client(api_key="…").solve(m)
     print(result.objective)                       # 11.0
     print(result.structures["teams"].part_of)     # [1, 0, 1, 0, 0, 0]
     ```

@@ -33,11 +33,13 @@ m = pyo.ConcreteModel()
 m.x = pyo.Var(bounds=(0.1, 10))
 m.obj = pyo.Objective(expr=m.x**2 + 1.0 / m.x, sense=pyo.minimize)
 
-client = Client()                             # defaults to the free-tier Quicopt server
+client = Client(api_key="…")                  # the key from your sign-up email
 result = client.solve(m)                      # read the model, encode it, solve it
 print(result.status, result.objective, result.solution)
 print(result.display)                         # the service's ready-to-print summary
 ```
+
+The service needs an API key. Register at <https://quicopt.com/signup> and the key arrives by email. To keep the key out of your code, set the environment variable `QUICOPT_API_KEY` instead and create the client as `Client()`.
 
 [`solve`][quicopt.client.Client.solve] takes the model as it stands (Pyomo, OR-Tools
 MathOpt, or PuLP) and reads it into Quicopt's own form on the way out. For a long

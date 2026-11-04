@@ -56,11 +56,13 @@ is a message ready to print.
 
 ## Server and API key
 
-`Client()` with no arguments uses the free tier at `DEFAULT_BASE_URL`. On its
-first call it receives an API key and saves it in a file, so later runs reuse the
-same key. The environment variable named by `KEY_PATH_ENV` moves that file.
+A `Client` sends its requests to `DEFAULT_BASE_URL` unless you pass another `base_url`. The service needs an API key: register at <https://quicopt.com/signup> and the key arrives by email. Pass it as `Client(api_key="…")`, or set the environment variable named by `API_KEY_ENV`. Without a key, a call raises a `QuicoptError` that links to the sign-up page.
 
 ::: quicopt.client.DEFAULT_BASE_URL
+    options:
+      heading_level: 3
+
+::: quicopt.client.API_KEY_ENV
     options:
       heading_level: 3
 
