@@ -103,7 +103,7 @@ durable storage in an environment whose home directory does not survive the run
 (CI, containers, Colab), where the default location is wiped between sessions and
 every run would otherwise mint a fresh key."""
 
-DEFAULT_BASE_URL = "https://try.quicoptapi.pgi.fz-juelich.de"
+DEFAULT_BASE_URL = "https://quicoptapi.pgi.fz-juelich.de"
 """The public Quicopt free-tier endpoint a [`Client`][quicopt.client.Client] targets when no
 ``base_url`` is given. Mirrors the Julia client's ``DEFAULT_BASE_URL`` so both
 clients reach the same server out of the box."""

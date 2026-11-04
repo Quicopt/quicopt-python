@@ -172,7 +172,7 @@ def test_metadata_source_and_project():
 def test_default_base_url():
     # Omitting base_url targets the public free tier; an explicit URL still wins.
     # cache=False keeps construction from touching the real cache file.
-    assert Client(cache=False).base_url == DEFAULT_BASE_URL == "https://try.quicoptapi.pgi.fz-juelich.de"
+    assert Client(cache=False).base_url == DEFAULT_BASE_URL == "https://quicoptapi.pgi.fz-juelich.de"
     assert Client("http://127.0.0.1:9", cache=False).base_url == "http://127.0.0.1:9"
 
 
