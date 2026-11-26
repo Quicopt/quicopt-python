@@ -1,4 +1,16 @@
-# quicopt
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Quicopt/quicopt-python/main/.github/images/quicopt-python-logo-dark.svg">
+    <img alt="quicopt" src="https://raw.githubusercontent.com/Quicopt/quicopt-python/main/.github/images/quicopt-python-logo.svg" width="240" align="middle">
+  </picture>
+  &emsp;&emsp;
+  <a href="https://quicopt.com">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Quicopt/quicopt-python/main/.github/images/quicopt-logo-dark.svg">
+      <img alt="Quicopt" src="https://raw.githubusercontent.com/Quicopt/quicopt-python/main/.github/images/quicopt-logo.svg" width="300" align="middle">
+    </picture>
+  </a>
+</p>
 
 [![PyPI](https://img.shields.io/pypi/v/quicopt.svg)](https://pypi.org/project/quicopt/)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://pypi.org/project/quicopt/)
